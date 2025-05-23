@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0">タスクを編集</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('edit_task', id=task['id']) }}">
+                    <div class="mb-3">
+                        <label for="title" class="form-label">タイトル <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="title" name="title" value="{{ task['title'] }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">詳細</label>
+                        <textarea class="form-control" id="description" name="description" rows="3">{{ task['description'] }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="due_date" class="form-label">期限日</label>
+                        <input type="date" class="form-control" id="due_date" name="due_date" 
+                               value="{{ task['due_date'] if task['due_date'] else '' }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="category" class="form-label">カテゴリ</label>
+                        <select class="form-select" id="category" name="category">
+                            <option value="">選択してください</option>
+                            <option value="仕事" {% if task['category'] == '仕事' %}selected{% endif %}>仕事</option>
+                            <option value="個人" {% if task['category'] == '個人' %}selected{% endif %}>個人</option>
+                            <option value="勉強" {% if task['category'] == '勉強' %}selected{% endif %}>勉強</option>
+                            <option value="その他" {% if task['category'] == 'その他' %}selected{% endif %}>その他</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">優先度</label>
+                        <div class="d-flex">
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="radio" name="priority" id="priority-high" value="high" 
+                                       {% if task['priority'] == 'high' %}checked{% endif %}>
+                                <label class="form-check-label" for="priority-high">
+                                    高
+                                </label>
+                            </div>
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="radio" name="priority" id="priority-medium" value="medium" 
+                                       {% if task['priority'] == 'medium' %}checked{% endif %}>
+                                <label class="form-check-label" for="priority-medium">
+                                    中
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="priority" id="priority-low" value="low" 
+                                       {% if task['priority'] == 'low' %}checked{% endif %}>
+                                <label class="form-check-label" for="priority-low">
+                                    低
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">キャンセル</a>
+                        <button type="submit" class="btn btn-primary">更新</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

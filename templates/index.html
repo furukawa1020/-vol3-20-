@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1>タスク一覧</h1>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('add_task') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> 新しいタスク
+        </a>
+    </div>
+</div>
+
+{% if tasks %}
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+        {% for task in tasks %}
+            <div class="col">
+                <div class="card task-card priority-{{ task['priority'] }} {% if task['completed'] %}completed-task{% endif %}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h5 class="card-title mb-0">{{ task['title'] }}</h5>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" 
+                                       {% if task['completed'] %}checked{% endif %} 
+                                       data-task-id="{{ task['id'] }}" 
+                                       onchange="completeTask(this)">
+                            </div>
+                        </div>
+                        
+                        {% if task['category'] %}
+                            <span class="category-badge mb-2">{{ task['category'] }}</span>
+                        {% endif %}
+                        
+                        {% if task['description'] %}
+                            <p class="card-text">{{ task['description'] }}</p>
+                        {% endif %}
+                        
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                {% if task['due_date'] %}
+                                    <small class="text-muted">
+                                        <i class="bi bi-calendar"></i> 
+                                        {{ task['due_date'] }}
+                                    </small>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <a href="{{ url_for('edit_task', id=task['id']) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <a href="{{ url_for('delete_task', id=task['id']) }}" class="btn btn-sm btn-outline-danger" 
+                                   onclick="return confirm('本当に削除しますか？');">
+                                    <i class="bi bi-trash"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="alert alert-info">
+        <h4 class="alert-heading">タスクがありません</h4>
+        <p>新しいタスクを追加して始めましょう！</p>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function completeTask(element) {
+        const taskId = element.getAttribute('data-task-id');
+        window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
+    }
+</script>
+{% endblock %}
