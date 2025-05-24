@@ -34,76 +34,81 @@ def get_db_connection():
     return conn
 
 def init_db():
-    conn = get_db_connection()
-    
-    # ユーザーテーブル
-    conn.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    
-    # カテゴリテーブル（新規追加）
-    conn.execute('''
-    CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        color TEXT NOT NULL DEFAULT '#007bff',
-        user_id INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )
-    ''')
-    
-    # タスクテーブル（category_idを追加）
-    conn.execute('''
-    CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        description TEXT,
-        due_date TEXT,
-        due_time TEXT,
-        category TEXT,
-        category_id INTEGER,
-        priority TEXT,
-        completed INTEGER DEFAULT 0,
-        user_id INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id),
-        FOREIGN KEY (category_id) REFERENCES categories (id)
-    )
-    ''')
-    
-    # 既存のテーブルに新しいカラムを追加（既存データ対応）
     try:
-        conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
+        conn = get_db_connection()
+        
+        # ユーザーテーブル
+        conn.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # カテゴリテーブル（新規追加）
+        conn.execute('''
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            color TEXT NOT NULL DEFAULT '#007bff',
+            user_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        ''')
+        
+        # タスクテーブル（category_idを追加）
+        conn.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_date TEXT,
+            due_time TEXT,
+            category TEXT,
+            category_id INTEGER,
+            priority TEXT,
+            completed INTEGER DEFAULT 0,
+            user_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (category_id) REFERENCES categories (id)
+        )
+        ''')
+        
+        # 既存のテーブルに新しいカラムを追加（既存データ対応）
+        try:
+            conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            conn.execute('ALTER TABLE tasks ADD COLUMN category_id INTEGER')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        
+        # デフォルトカテゴリの作成（グローバル）
+        existing_global_categories = conn.execute('SELECT COUNT(*) FROM categories WHERE user_id IS NULL').fetchone()[0]
+        if existing_global_categories == 0:
+            default_categories = [
+                ('仕事', DEFAULT_COLORS[0], None),
+                ('個人', DEFAULT_COLORS[1], None),
+                ('勉強', DEFAULT_COLORS[2], None)
+            ]
+            conn.executemany('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', default_categories)
+            conn.commit()
+        
         conn.commit()
-    except sqlite3.OperationalError:
+        conn.close()
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        # エラーが発生してもアプリを継続実行
         pass
-    
-    try:
-        conn.execute('ALTER TABLE tasks ADD COLUMN category_id INTEGER')
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass
-    
-    # デフォルトカテゴリの作成（グローバル）
-    existing_global_categories = conn.execute('SELECT COUNT(*) FROM categories WHERE user_id IS NULL').fetchone()[0]
-    if existing_global_categories == 0:
-        default_categories = [
-            ('仕事', DEFAULT_COLORS[0], None),
-            ('個人', DEFAULT_COLORS[1], None),
-            ('勉強', DEFAULT_COLORS[2], None)
-        ]
-        conn.executemany('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', default_categories)
-        conn.commit()
-    
-    conn.commit()
-    conn.close()
 
 # Initialize the database
 init_db()
