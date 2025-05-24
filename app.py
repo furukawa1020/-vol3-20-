@@ -153,18 +153,15 @@ def logout():
 def index():
     user_id = get_current_user_id()
     
-    conn = get_db_connection()
     if user_id:
         # 認証ユーザーのタスクのみ取得
+        conn = get_db_connection()
         tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ? ORDER BY completed, due_date ASC', 
                            (user_id,)).fetchall()
+        conn.close()
     else:
         # ゲストモードの場合、セッション内のタスクを使用
         tasks = session.get('guest_tasks', [])
-        # SQLiteのRowオブジェクトに似た辞書形式に変換
-        tasks = [dict(task) for task in tasks]
-    
-    conn.close()
     
     is_guest = 'guest_mode' in session
     return render_template('index.html', tasks=tasks, is_guest=is_guest)
@@ -193,8 +190,12 @@ def add_task():
             if 'guest_tasks' not in session:
                 session['guest_tasks'] = []
             
+            # 一意のIDを生成
+            existing_ids = [task['id'] for task in session['guest_tasks']]
+            new_id = max(existing_ids, default=0) + 1
+            
             new_task = {
-                'id': len(session['guest_tasks']) + 1,
+                'id': new_id,
                 'title': title,
                 'description': description,
                 'due_date': due_date,
@@ -204,7 +205,7 @@ def add_task():
                 'created_at': datetime.now().isoformat()
             }
             
-            guest_tasks = session['guest_tasks']
+            guest_tasks = session['guest_tasks'].copy()
             guest_tasks.append(new_task)
             session['guest_tasks'] = guest_tasks
         
@@ -261,6 +262,7 @@ def edit_task(id):
             priority = request.form.get('priority', 'medium')
             
             # ゲストタスクを更新
+            guest_tasks = session['guest_tasks'].copy()
             for i, t in enumerate(guest_tasks):
                 if t['id'] == id:
                     guest_tasks[i].update({
@@ -319,11 +321,12 @@ def complete_task(id):
     else:
         # ゲストモードの場合
         guest_tasks = session.get('guest_tasks', [])
-        for i, task in enumerate(guest_tasks):
+        guest_tasks_copy = guest_tasks.copy()
+        for i, task in enumerate(guest_tasks_copy):
             if task['id'] == id:
-                guest_tasks[i]['completed'] = 0 if task['completed'] else 1
+                guest_tasks_copy[i]['completed'] = 0 if task['completed'] else 1
                 break
-        session['guest_tasks'] = guest_tasks
+        session['guest_tasks'] = guest_tasks_copy
     
     return redirect(url_for('index'))
 
@@ -370,92 +373,9 @@ def analytics():
                          priority_stats=dict(priority_stats),
                          is_guest=is_guest)
 
-@app.route('/chart/<chart_type>')
-@login_required  # この行を追加
-def generate_chart(chart_type):
-    """チャート画像を生成"""
-    user_id = get_current_user_id()
-    
-    if user_id:
-        conn = get_db_connection()
-        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
-        conn.close()
-    else:
-        tasks = session.get('guest_tasks', [])
-    
-    # タスクデータをリスト形式に変換
-    task_list = []
-    for task in tasks:
-        task_dict = {
-            'title': task['title'],
-            'category': task['category'] if task['category'] else '未分類',
-            'priority': task['priority'] if task['priority'] else 'medium',
-            'completed': bool(task['completed']),
-            'due_date': task['due_date']
-        }
-        task_list.append(task_dict)
-    
-    # matplotlib設定
-    plt.style.use('default')
-    font_prop = setup_japanese_font()
-    
-    if chart_type == 'category_pie':
-        return generate_category_pie_chart(task_list, font_prop)
-    elif chart_type == 'priority_bar':
-        return generate_priority_bar_chart(task_list, font_prop)
-    elif chart_type == 'completion_status':
-        return generate_completion_status_chart(task_list, font_prop)
-    elif chart_type == 'category_stacked':
-        return generate_category_stacked_chart(task_list, font_prop)
-    
-    return '', 404
-
-@app.route('/export_stats')
-@login_required  # この行を追加
-def export_stats():
-    """統計データをJSONでエクスポート"""
-    user_id = get_current_user_id()
-    
-    if user_id:
-        conn = get_db_connection()
-        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
-        conn.close()
-    else:
-        tasks = session.get('guest_tasks', [])
-    
-    # タスクデータを辞書形式に変換
-    task_list = []
-    for task in tasks:
-        task_dict = {
-            'id': task['id'],
-            'title': task['title'],
-            'description': task['description'],
-            'due_date': task['due_date'],
-            'category': task['category'],
-            'priority': task['priority'],
-            'completed': bool(task['completed']),
-            'created_at': task.get('created_at', '')
-        }
-        task_list.append(task_dict)
-    
-    # 統計データを作成
-    stats_data = {
-        "export_date": datetime.now().isoformat(),
-        "tasks": task_list,
-        "summary": {
-            "total_tasks": len(task_list),
-            "completed_tasks": sum(1 for task in task_list if task['completed']),
-            "categories": list(set(task['category'] for task in task_list if task['category'])),
-            "priorities": list(set(task['priority'] for task in task_list if task['priority']))
-        }
-    }
-    
-    return jsonify(stats_data)
-
 def setup_japanese_font():
     """日本語フォントの設定"""
     try:
-        # Renderの環境ではフォントが制限されているため、シンプルに
         plt.rcParams['font.family'] = 'DejaVu Sans'
         return None
     except Exception as e:
@@ -500,7 +420,6 @@ def generate_priority_bar_chart(tasks, font_prop):
     plt.xlabel('Priority')
     plt.ylabel('Number of Tasks')
     
-    # バーに値を表示
     for bar, count in zip(bars, counts):
         height = bar.get_height()
         plt.text(bar.get_x() + bar.get_width()/2., height,
@@ -576,8 +495,48 @@ def create_empty_chart(message):
     plt.axis('off')
     return create_chart_response()
 
+@app.route('/chart/<chart_type>')
+@login_required
+def generate_chart(chart_type):
+    """チャート画像を生成"""
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        conn.close()
+    else:
+        tasks = session.get('guest_tasks', [])
+    
+    # タスクデータをリスト形式に変換
+    task_list = []
+    for task in tasks:
+        task_dict = {
+            'title': task['title'],
+            'category': task['category'] if task['category'] else '未分類',
+            'priority': task['priority'] if task['priority'] else 'medium',
+            'completed': bool(task['completed']),
+            'due_date': task['due_date']
+        }
+        task_list.append(task_dict)
+    
+    # matplotlib設定
+    plt.style.use('default')
+    font_prop = setup_japanese_font()
+    
+    if chart_type == 'category_pie':
+        return generate_category_pie_chart(task_list, font_prop)
+    elif chart_type == 'priority_bar':
+        return generate_priority_bar_chart(task_list, font_prop)
+    elif chart_type == 'completion_status':
+        return generate_completion_status_chart(task_list, font_prop)
+    elif chart_type == 'category_stacked':
+        return generate_category_stacked_chart(task_list, font_prop)
+    
+    return '', 404
+
 @app.route('/export_stats')
-@login_required  # この行を追加
+@login_required
 def export_stats():
     """統計データをJSONでエクスポート"""
     user_id = get_current_user_id()
@@ -595,10 +554,10 @@ def export_stats():
         task_dict = {
             'id': task['id'],
             'title': task['title'],
-            'description': task['description'],
-            'due_date': task['due_date'],
-            'category': task['category'],
-            'priority': task['priority'],
+            'description': task['description'] or '',
+            'due_date': task['due_date'] or '',
+            'category': task['category'] or '',
+            'priority': task['priority'] or 'medium',
             'completed': bool(task['completed']),
             'created_at': task.get('created_at', '')
         }
