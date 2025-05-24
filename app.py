@@ -10,8 +10,9 @@ from functools import wraps
 # matplotlib設定をインポート前に行う
 import matplotlib
 matplotlib.use('Agg')  # GUI不要のバックエンドを設定
+# フォント警告を無効にする
+matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import io
 import base64
 
@@ -124,8 +125,6 @@ def init_db():
         
     except Exception as e:
         print(f"Database initialization error: {e}")
-        import traceback
-        traceback.print_exc()
         # エラーが発生してもアプリを継続実行
         pass
 
@@ -142,68 +141,17 @@ def health_check():
         print(f"Health check failed: {e}")
         return False
 
-# データベース初期化（アプリ起動時）
-print("Initializing database...")
-init_db()
+# 初期化フラグ（重複実行防止）
+_initialized = False
 
-# ヘルスチェック
-if not health_check():
-    print("Warning: Health check failed, but continuing...")
-
-print("Flask application ready to start")
-
-# gunicorn用のアプリケーション設定
-def create_app():
-    """アプリケーションファクトリー（gunicorn用）"""
-    return app
-
-# Renderでgunicornを使用する場合、この部分をコメントアウトまたは条件分岐
-if __name__ == '__main__':
-    try:
-        # 開発環境でのみ直接実行
-        port = int(os.environ.get('PORT', 5000))
-        host = '0.0.0.0'
-        
-        print(f"Starting Flask app on {host}:{port}")
-        
-        debug_mode = os.environ.get('FLASK_ENV') == 'development'
-        
-        app.run(
-            host=host,
-            port=port,
-            debug=debug_mode,
-            threaded=True
-        )
-    except Exception as e:
-        print(f"Error starting application: {e}")
-        import traceback
-        traceback.print_exc()
-        exit(1)
-
-# gunicorn用のアプリケーションオブジェクト
-application = app
-
-# 遅延初期化でデータベースセットアップ
-@app.before_first_request
-def initialize_database():
-    """最初のリクエスト前にデータベースを初期化"""
-    print("Initializing database before first request...")
-    init_db()
-    
-    if not health_check():
-        print("Warning: Health check failed, but continuing...")
-    
-    print("Flask application ready")
-
-# または、gunicorn環境では即座に初期化
-try:
-    # 本番環境（gunicorn）では即座に初期化
-    if os.environ.get('SERVER_SOFTWARE', '').startswith('gunicorn'):
-        print("Running under gunicorn, initializing database...")
+def ensure_initialization():
+    """初期化の実行を保証（重複実行防止）"""
+    global _initialized
+    if not _initialized:
+        print("Performing one-time initialization...")
         init_db()
-        health_check()
-except Exception as e:
-    print(f"Startup initialization error: {e}")
+        _initialized = True
+        print("Initialization completed")
 
 # Flaskアプリケーションのエラーハンドラー
 @app.errorhandler(500)
@@ -222,6 +170,9 @@ def not_found(error):
 def health():
     """ヘルスチェックエンドポイント"""
     try:
+        # 初期化を確認
+        ensure_initialization()
+        
         # データベース接続テスト
         conn = get_db_connection()
         conn.execute('SELECT 1')
@@ -230,10 +181,97 @@ def health():
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}, 500
 
-# データベース初期化関数を呼び出し
-try:
-    print("Application startup: initializing database...")
-    init_db()
-    print("Database initialization completed")
-except Exception as e:
-    print(f"Failed to initialize database during startup: {e}")
+# 最初のリクエスト前に初期化実行（Flask 2.2以降対応）
+def initialize_on_first_request():
+    """最初のリクエスト前にデータベースを初期化"""
+    ensure_initialization()
+
+# Flask 2.2以降の方式でリクエスト前処理
+@app.before_request
+def before_request():
+    """各リクエスト前に実行（初回のみ初期化）"""
+    ensure_initialization()
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session and 'guest_mode' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/')
+def index():
+    """メインページ"""
+    try:
+        if 'user_id' not in session and 'guest_mode' not in session:
+            return redirect(url_for('login'))
+        
+        # 簡単なテスト表示
+        return "<h1>Task Manager</h1><p>Application is running successfully!</p><a href='/health'>Health Check</a> | <a href='/test'>Test DB</a>"
+    
+    except Exception as e:
+        print(f"Index route error: {e}")
+        return f"Error: {str(e)}", 500
+
+@app.route('/login')
+def login():
+    """ログインページ"""
+    try:
+        return "<h1>Login Page</h1><p>Please implement login functionality</p><a href='/'>Back to Home</a>"
+    except Exception as e:
+        print(f"Login route error: {e}")
+        return f"Error: {str(e)}", 500
+
+@app.route('/test')
+def test():
+    """テストエンドポイント"""
+    try:
+        # データベース接続テスト
+        conn = get_db_connection()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        
+        # 各テーブルの件数も確認
+        table_info = {}
+        for table in tables:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table['name']}").fetchone()[0]
+            table_info[table['name']] = count
+        
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "Application is working",
+            "tables": table_info,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+# アプリケーション起動時に初期化を実行
+print("Starting application initialization...")
+ensure_initialization()
+print("Application initialization completed")
+
+# gunicorn用のアプリケーションオブジェクト
+application = app
+
+# 開発環境での直接実行
+if __name__ == '__main__':
+    try:
+        port = int(os.environ.get('PORT', 5000))
+        host = '0.0.0.0'
+        
+        print(f"Starting Flask app on {host}:{port}")
+        
+        debug_mode = os.environ.get('FLASK_ENV') == 'development'
+        
+        app.run(
+            host=host,
+            port=port,
+            debug=debug_mode,
+            threaded=True
+        )
+    except Exception as e:
+        print(f"Error starting application: {e}")
+        exit(1)
