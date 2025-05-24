@@ -217,37 +217,73 @@ def index():
     return render_template('index.html', tasks=tasks, is_guest=is_guest)
 
 @app.route('/categories', methods=['GET', 'POST'])
+@login_required
 def categories():
     if request.method == 'POST':
         name = request.form.get('name')
         color = request.form.get('color')
+        
+        print(f"受信データ: name={name}, color={color}")  # デバッグ用
         
         if not name or not color:
             flash('カテゴリ名と色を選択してください。', 'error')
             return redirect(url_for('categories'))
         
         try:
-            conn = get_db_connection()
-            
-            # 重複チェック
-            existing = conn.execute('SELECT id FROM categories WHERE name = ?', (name,)).fetchone()
-            if existing:
-                flash('そのカテゴリは既に存在します。', 'error')
+            if 'guest_mode' in session:
+                # ゲストモード：セッションに保存
+                if 'guest_categories' not in session:
+                    session['guest_categories'] = []
+                
+                # 重複チェック
+                existing_names = [cat['name'].lower() for cat in session['guest_categories']]
+                if name.lower() in existing_names:
+                    flash(f'カテゴリ「{name}」は既に存在します。', 'error')
+                    return redirect(url_for('categories'))
+                
+                # カテゴリを追加
+                new_category = {
+                    'id': len(session['guest_categories']) + 1000,  # ゲスト用のID
+                    'name': name,
+                    'color': color,
+                    'user_id': None
+                }
+                session['guest_categories'].append(new_category)
+                session.modified = True
+                
+                print(f"ゲストカテゴリ追加: {new_category}")  # デバッグ用
+                flash(f'カテゴリ「{name}」を追加しました。（ゲストモード）', 'success')
+                
+            else:
+                # ログインユーザー：データベースに保存
+                conn = get_db_connection()
+                
+                # 重複チェック
+                existing = conn.execute(
+                    'SELECT id FROM categories WHERE LOWER(name) = LOWER(?)', 
+                    (name,)
+                ).fetchone()
+                
+                if existing:
+                    flash(f'カテゴリ「{name}」は既に存在します。', 'error')
+                    conn.close()
+                    return redirect(url_for('categories'))
+                
+                # カテゴリを追加
+                user_id = session.get('user_id')
+                cursor = conn.execute(
+                    'INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)',
+                    (name, color, user_id)
+                )
+                conn.commit()
+                
+                print(f"ユーザーカテゴリ追加: ID={cursor.lastrowid}")  # デバッグ用
                 conn.close()
-                return redirect(url_for('categories'))
-            
-            # カテゴリを追加
-            user_id = session.get('user_id') if not session.get('is_guest') else None
-            conn.execute(
-                'INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)',
-                (name, color, user_id)
-            )
-            conn.commit()
-            conn.close()
-            
-            flash(f'カテゴリ「{name}」を追加しました。', 'success')
-            
+                
+                flash(f'カテゴリ「{name}」を追加しました。', 'success')
+                
         except Exception as e:
+            print(f"Error: {e}")  # デバッグ用
             flash(f'エラーが発生しました: {str(e)}', 'error')
         
         return redirect(url_for('categories'))
@@ -256,36 +292,79 @@ def categories():
     try:
         conn = get_db_connection()
         
-        # カテゴリ一覧を取得
-        if session.get('is_guest'):
-            # ゲストは標準カテゴリのみ
-            categories = conn.execute(
+        if 'guest_mode' in session:
+            # ゲストモード：標準カテゴリ + ゲスト作成カテゴリ
+            # 標準カテゴリを取得
+            db_categories = conn.execute(
                 'SELECT * FROM categories WHERE user_id IS NULL ORDER BY name'
             ).fetchall()
+            
+            # セッションからゲストカテゴリを取得
+            guest_categories = session.get('guest_categories', [])
+            
+            # 合成（標準カテゴリ + ゲストカテゴリ）
+            categories = []
+            
+            # 標準カテゴリをRow形式に変換
+            for cat in db_categories:
+                categories.append({
+                    'id': cat['id'],
+                    'name': cat['name'],
+                    'color': cat['color'],
+                    'user_id': cat['user_id']
+                })
+            
+            # ゲストカテゴリを追加
+            for cat in guest_categories:
+                categories.append(cat)
+                
         else:
-            # ログインユーザーは自分のカテゴリ + 標準カテゴリ
+            # ログインユーザー：自分のカテゴリ + 標準カテゴリ
             user_id = session.get('user_id')
-            categories = conn.execute(
-                'SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY name',
+            db_categories = conn.execute(
+                'SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC',
                 (user_id,)
             ).fetchall()
+            
+            categories = []
+            for cat in db_categories:
+                categories.append({
+                    'id': cat['id'],
+                    'name': cat['name'],
+                    'color': cat['color'],
+                    'user_id': cat['user_id']
+                })
+        
+        print(f"取得したカテゴリ数: {len(categories)}")  # デバッグ用
         
         # カテゴリ別タスク数を取得
         categorized_tasks = {}
         for category in categories:
-            tasks = conn.execute(
-                'SELECT * FROM tasks WHERE category = ?',
-                (category['name'],)
-            ).fetchall()
+            if 'guest_mode' in session:
+                # ゲストのタスクから検索
+                guest_tasks = session.get('guest_tasks', [])
+                tasks = [task for task in guest_tasks if task.get('category') == category['name']]
+            else:
+                # データベースから検索
+                tasks = conn.execute(
+                    'SELECT * FROM tasks WHERE category_id = ? OR category = ?',
+                    (category['id'], category['name'])
+                ).fetchall()
+            
             categorized_tasks[category['name']] = tasks
         
         conn.close()
         
+        # ゲストモード判定
+        is_guest = 'guest_mode' in session
+        
         return render_template('categories.html', 
                              categories=categories, 
-                             categorized_tasks=categorized_tasks)
+                             categorized_tasks=categorized_tasks,
+                             is_guest=is_guest)
     
     except Exception as e:
+        print(f"GET Error: {e}")  # デバッグ用
         flash(f'データの取得に失敗しました: {str(e)}', 'error')
         return redirect(url_for('index'))
 

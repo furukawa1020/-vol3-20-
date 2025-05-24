@@ -62,6 +62,13 @@
                                 <h5 class="card-title mb-0">新しいカテゴリを追加</h5>
                             </div>
                             <div class="card-body">
+                                {% if is_guest %}
+                                <div class="alert alert-info mb-3">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>ゲストモード:</strong> 作成したカテゴリはセッション中のみ保存されます。
+                                </div>
+                                {% endif %}
+                                
                                 <form method="POST" action="{{ url_for('categories') }}" id="categoryForm">
                                     <div class="mb-3">
                                         <label for="name" class="form-label">カテゴリ名</label>
@@ -109,6 +116,7 @@
                                     <div class="d-grid gap-2">
                                         <button type="submit" class="btn btn-primary" id="submitBtn">
                                             <i class="bi bi-plus me-2"></i>カテゴリを追加
+                                            {% if is_guest %}<small class="d-block">(セッション保存)</small>{% endif %}
                                         </button>
                                     </div>
                                 </form>
@@ -136,17 +144,24 @@
                                         <tbody>
                                             {% for category in categories %}
                                             <tr>
-                                                <td>{{ category.name if category.name else category }}</td>
+                                                <td>
+                                                    <span class="badge" style="background-color: {{ category.color }}; color: white; padding: 0.5rem 1rem;">
+                                                        {{ category.name }}
+                                                    </span>
+                                                    {% if is_guest and category.id >= 1000 %}
+                                                        <small class="text-muted ms-1">(ゲスト)</small>
+                                                    {% endif %}
+                                                </td>
                                                 <td>
                                                     <div class="color-display" 
-                                                         style="background-color: {{ category.color if category.color else '#007bff' }}; 
+                                                         style="background-color: {{ category.color }}; 
                                                                 width: 24px; height: 24px; border-radius: 50%; 
                                                                 display: inline-block; border: 2px solid #ddd;"></div>
                                                 </td>
                                                 <td>
                                                     <span class="badge bg-primary">
-                                                        {% if categorized_tasks and categorized_tasks[category.name if category.name else category] %}
-                                                            {{ categorized_tasks[category.name if category.name else category]|length }}
+                                                        {% if categorized_tasks and categorized_tasks[category.name] %}
+                                                            {{ categorized_tasks[category.name]|length }}
                                                         {% else %}
                                                             0
                                                         {% endif %}
