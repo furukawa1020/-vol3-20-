@@ -41,13 +41,14 @@ def init_db():
     )
     ''')
     
-    # タスクテーブル（user_idを追加）
+    # タスクテーブル（due_timeを追加）
     conn.execute('''
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         description TEXT,
         due_date TEXT,
+        due_time TEXT,
         category TEXT,
         priority TEXT,
         completed INTEGER DEFAULT 0,
@@ -56,6 +57,14 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
     ''')
+    
+    # 既存のテーブルにdue_timeカラムを追加（既存データ対応）
+    try:
+        conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:
+        # カラムが既に存在する場合は無視
+        pass
     
     conn.commit()
     conn.close()
@@ -173,6 +182,7 @@ def add_task():
         title = request.form['title']
         description = request.form.get('description', '')
         due_date = request.form.get('due_date', '')
+        due_time = request.form.get('due_time', '')  # 新しく追加
         category = request.form.get('category', '')
         priority = request.form.get('priority', 'medium')
         
@@ -181,8 +191,8 @@ def add_task():
         if user_id:
             # 認証ユーザーの場合、データベースに保存
             conn = get_db_connection()
-            conn.execute('INSERT INTO tasks (title, description, due_date, category, priority, user_id) VALUES (?, ?, ?, ?, ?, ?)',
-                        (title, description, due_date, category, priority, user_id))
+            conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        (title, description, due_date, due_time, category, priority, user_id))
             conn.commit()
             conn.close()
         else:
@@ -199,6 +209,7 @@ def add_task():
                 'title': title,
                 'description': description,
                 'due_date': due_date,
+                'due_time': due_time,  # 新しく追加
                 'category': category,
                 'priority': priority,
                 'completed': 0,
@@ -233,11 +244,12 @@ def edit_task(id):
             title = request.form['title']
             description = request.form.get('description', '')
             due_date = request.form.get('due_date', '')
+            due_time = request.form.get('due_time', '')  # 新しく追加
             category = request.form.get('category', '')
             priority = request.form.get('priority', 'medium')
             
-            conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, category = ?, priority = ? WHERE id = ? AND user_id = ?',
-                        (title, description, due_date, category, priority, id, user_id))
+            conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, due_time = ?, category = ?, priority = ? WHERE id = ? AND user_id = ?',
+                        (title, description, due_date, due_time, category, priority, id, user_id))
             conn.commit()
             conn.close()
             
@@ -258,6 +270,7 @@ def edit_task(id):
             title = request.form['title']
             description = request.form.get('description', '')
             due_date = request.form.get('due_date', '')
+            due_time = request.form.get('due_time', '')  # 新しく追加
             category = request.form.get('category', '')
             priority = request.form.get('priority', 'medium')
             
@@ -269,6 +282,7 @@ def edit_task(id):
                         'title': title,
                         'description': description,
                         'due_date': due_date,
+                        'due_time': due_time,  # 新しく追加
                         'category': category,
                         'priority': priority
                     })

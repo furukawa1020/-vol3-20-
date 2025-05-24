@@ -66,13 +66,32 @@
                                 </div>
 
                                 <div class="col-md-6 mb-3">
-                                    <label for="priority" class="form-label">優先度</label>
-                                    <select class="form-select" id="priority" name="priority">
-                                        <option value="low">低</option>
-                                        <option value="medium" selected>中</option>
-                                        <option value="high">高</option>
-                                    </select>
+                                    <label for="due_time" class="form-label">
+                                        期限時刻 
+                                        <small class="text-muted">(オプション)</small>
+                                    </label>
+                                    <input type="time" class="form-control" id="due_time" name="due_time">
+                                    <div class="form-text">例: 14:30 (午後2時30分)</div>
                                 </div>
+                            </div>
+
+                            <div class="alert alert-info">
+                                <small>
+                                    <i class="bi bi-info-circle"></i> 
+                                    <strong>時刻指定のヒント:</strong><br>
+                                    • 期限日のみ: その日中に完了すべきタスク<br>
+                                    • 期限日+時刻: 特定の時間までに完了すべきタスク<br>
+                                    • 会議やアポイントメントには時刻指定がおすすめです
+                                </small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="priority" class="form-label">優先度</label>
+                                <select class="form-select" id="priority" name="priority">
+                                    <option value="low">低</option>
+                                    <option value="medium" selected>中</option>
+                                    <option value="high">高</option>
+                                </select>
                             </div>
 
                             <div class="mb-3">

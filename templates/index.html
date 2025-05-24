@@ -151,6 +151,9 @@
                                             <small class="text-muted">
                                                 <i class="bi bi-calendar"></i> 
                                                 {{ task['due_date'] }}
+                                                {% if task['due_time'] %}
+                                                    <i class="bi bi-clock ms-1"></i> {{ task['due_time'] }}
+                                                {% endif %}
                                             </small>
                                         {% endif %}
                                     </div>
