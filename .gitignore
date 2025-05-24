@@ -7,7 +7,5 @@ env/
 venv/
 .venv/
 .env
-*.db
-*.sqlite
 .DS_Store
 Thumbs.db
