@@ -120,7 +120,7 @@
             {% endif %}
         {% endwith %}
 
-        <div class="row flex-nowrap" style="min-height: 600px;">
+        <div class="row flex-nowrap align-items-start" style="min-height: 600px;">
             <!-- 左カラム：タスク一覧 -->
             <div class="col-lg-9 col-md-8 col-12 mb-4">
                 <div class="row mb-4">
@@ -162,6 +162,9 @@
                                             <small class="text-muted">
                                                 <i class="bi bi-calendar"></i> 
                                                 {{ task['due_date'] }}
+                                                {% if task['due_time'] %}
+                                                    <i class="bi bi-clock ms-1"></i> {{ task['due_time'] }}
+                                                {% endif %}
                                             </small>
                                         {% endif %}
                                     </div>
@@ -196,8 +199,8 @@
             <!-- 仕切り線 -->
             <div class="divider-vertical d-none d-lg-block"></div>
             <!-- 右カラム：時計のみ -->
-            <div class="col-lg-3 col-md-4 col-12 d-flex flex-column align-items-center justify-content-start">
-                <div class="my-3">
+            <div class="col-lg-3 col-md-4 col-12">
+                <div class="my-3 d-flex flex-column align-items-center">
                     <canvas id="analogClock" width="220" height="220"
                         style="border-radius: 16px; box-shadow: 0 2px 8px #aaa;"></canvas>
                 </div>
