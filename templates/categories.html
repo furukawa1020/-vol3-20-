@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">カテゴリ管理</h2>
+
+    <form method="POST" action="{{ url_for('categories') }}">
+        <div class="mb-3">
+            <label for="name" class="form-label">カテゴリ名</label>
+            <input type="text" id="name" name="name" class="form-control" placeholder="例: 仕事" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label d-block">色を選択</label>
+            <input type="hidden" name="color" id="selected-color" required>
+
+            <div class="d-flex flex-wrap gap-2">
+                {% for color in colors %}
+                <div class="color-circle" data-color="{{ color }}" style="background-color: {{ color }};"></div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3">追加</button>
+        <a href="{{ url_for('add_task') }}" class="btn btn-secondary mt-3">戻る</a>
+    </form>
+
+    <hr class="my-4">
+
+    <h4>既存のカテゴリ</h4>
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>カテゴリ名</th>
+                <th>色</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for category in categories %}
+            <tr>
+                <td>{{ category.name }}</td>
+                <td>
+                    <span class="badge" style="background-color: {{ category.color }}; color: transparent;">
+                        {{ category.color }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+.color-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid #ccc;
+    cursor: pointer;
+    transition: border 0.2s ease;
+}
+
+.color-circle.selected {
+    border: 3px solid #000;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const circles = document.querySelectorAll('.color-circle');
+    const selectedInput = document.getElementById('selected-color');
+
+    circles.forEach(circle => {
+        circle.addEventListener('click', () => {
+            // Remove 'selected' from all
+            circles.forEach(c => c.classList.remove('selected'));
+
+            // Add to the clicked one
+            circle.classList.add('selected');
+
+            // Set the hidden input
+            selectedInput.value = circle.dataset.color;
+        });
+    });
+});
+</script>
+
+{% endblock %}

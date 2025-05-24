@@ -26,16 +26,16 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="category" class="form-label">カテゴリ</label>
-                        <select class="form-select" id="category" name="category">
+                        <label for="category_id" class="form-label">カテゴリ</label>
+                        <select class="form-select" id="category_id" name="category_id" onchange="checkOtherCategory(this)">
                             <option value="">選択してください</option>
-                            <option value="仕事" {% if task['category'] == '仕事' %}selected{% endif %}>仕事</option>
-                            <option value="個人" {% if task['category'] == '個人' %}selected{% endif %}>個人</option>
-                            <option value="勉強" {% if task['category'] == '勉強' %}selected{% endif %}>勉強</option>
-                            <option value="その他" {% if task['category'] == 'その他' %}selected{% endif %}>その他</option>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{category.name }}</option>
+                            {% endfor %}
+                            <option value="other">+ その他のカテゴリを追加...</option>
                         </select>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label class="form-label">優先度</label>
                         <div class="d-flex">
@@ -72,4 +72,11 @@
         </div>
     </div>
 </div>
+<script>
+    function checkOtherCategory(select) {
+        if (select.value === "other") {
+            window.location.href = "{{ url_for('categories') }}";
+        }
+    }
+</script>
 {% endblock %}

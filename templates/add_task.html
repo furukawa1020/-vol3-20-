@@ -13,52 +13,46 @@
                         <label for="title" class="form-label">タイトル <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" id="title" name="title" required>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="description" class="form-label">詳細</label>
                         <textarea class="form-control" id="description" name="description" rows="3"></textarea>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="due_date" class="form-label">期限日</label>
                         <input type="date" class="form-control" id="due_date" name="due_date">
                     </div>
-                    
+
                     <div class="mb-3">
-                        <label for="category" class="form-label">カテゴリ</label>
-                        <select class="form-select" id="category" name="category">
+                        <label for="category_id" class="form-label">カテゴリ</label>
+                        <select class="form-select" id="category_id" name="category_id" onchange="checkOtherCategory(this)">
                             <option value="">選択してください</option>
-                            <option value="仕事">仕事</option>
-                            <option value="個人">個人</option>
-                            <option value="勉強">勉強</option>
-                            <option value="その他">その他</option>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{category.name }}</option>
+                            {% endfor %}
+                            <option value="other">+ その他のカテゴリを追加...</option>
                         </select>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label class="form-label">優先度</label>
                         <div class="d-flex">
                             <div class="form-check me-3">
                                 <input class="form-check-input" type="radio" name="priority" id="priority-high" value="high">
-                                <label class="form-check-label" for="priority-high">
-                                    高
-                                </label>
+                                <label class="form-check-label" for="priority-high">高</label>
                             </div>
                             <div class="form-check me-3">
                                 <input class="form-check-input" type="radio" name="priority" id="priority-medium" value="medium" checked>
-                                <label class="form-check-label" for="priority-medium">
-                                    中
-                                </label>
+                                <label class="form-check-label" for="priority-medium">中</label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="priority" id="priority-low" value="low">
-                                <label class="form-check-label" for="priority-low">
-                                    低
-                                </label>
+                                <label class="form-check-label" for="priority-low">低</label>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                         <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">キャンセル</a>
                         <button type="submit" class="btn btn-primary">保存</button>
@@ -68,4 +62,12 @@
         </div>
     </div>
 </div>
+
+<script>
+    function checkOtherCategory(select) {
+        if (select.value === "other") {
+            window.location.href = "{{ url_for('categories') }}";
+        }
+    }
+</script>
 {% endblock %}

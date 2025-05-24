@@ -28,10 +28,13 @@
                             </div>
                         </div>
                         
-                        {% if task['category'] %}
-                            <span class="category-badge mb-2">{{ task['category'] }}</span>
+                        {% if task['category_name'] %}
+                            <span class="badge category-badge mb-2" 
+                                    style="background-color: {{ task['category_color'] | trim }}; color: #fff; border-radius: 0.25rem; padding: 0.25em 0.5em;">
+                                {{ task['category_name'] }}
+                            </span>
                         {% endif %}
-                        
+
                         {% if task['description'] %}
                             <p class="card-text">{{ task['description'] }}</p>
                         {% endif %}
