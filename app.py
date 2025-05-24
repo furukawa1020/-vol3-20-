@@ -17,10 +17,17 @@ import base64
 
 # Create the Flask application
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here-change-in-production'
+
+# 本番環境向けのシークレットキー設定
+app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here-change-in-production')
+
+# セッション設定
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Database setup
-DB_PATH = 'tasks.db'
+DB_PATH = os.environ.get('DATABASE_URL', 'tasks.db')
 
 # デフォルトカテゴリカラー
 DEFAULT_COLORS = [
@@ -35,6 +42,11 @@ def get_db_connection():
 
 def init_db():
     try:
+        # データベースディレクトリの作成
+        db_dir = os.path.dirname(DB_PATH)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            
         conn = get_db_connection()
         
         # ユーザーテーブル
@@ -82,36 +94,63 @@ def init_db():
         # 既存のテーブルに新しいカラムを追加（既存データ対応）
         try:
             conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"Warning: Could not add due_time column: {e}")
         
         try:
             conn.execute('ALTER TABLE tasks ADD COLUMN category_id INTEGER')
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"Warning: Could not add category_id column: {e}")
         
         # デフォルトカテゴリの作成（グローバル）
-        existing_global_categories = conn.execute('SELECT COUNT(*) FROM categories WHERE user_id IS NULL').fetchone()[0]
-        if existing_global_categories == 0:
-            default_categories = [
-                ('仕事', DEFAULT_COLORS[0], None),
-                ('個人', DEFAULT_COLORS[1], None),
-                ('勉強', DEFAULT_COLORS[2], None)
-            ]
-            conn.executemany('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', default_categories)
-            conn.commit()
+        try:
+            existing_global_categories = conn.execute('SELECT COUNT(*) FROM categories WHERE user_id IS NULL').fetchone()[0]
+            if existing_global_categories == 0:
+                default_categories = [
+                    ('仕事', DEFAULT_COLORS[0], None),
+                    ('個人', DEFAULT_COLORS[1], None),
+                    ('勉強', DEFAULT_COLORS[2], None)
+                ]
+                conn.executemany('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', default_categories)
+                print("Default categories created successfully")
+        except Exception as e:
+            print(f"Warning: Could not create default categories: {e}")
         
         conn.commit()
         conn.close()
+        print("Database initialized successfully")
+        
     except Exception as e:
         print(f"Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
         # エラーが発生してもアプリを継続実行
         pass
 
-# Initialize the database
+# アプリケーション起動前のヘルスチェック
+def health_check():
+    """アプリケーションの基本的なヘルスチェック"""
+    try:
+        # データベース接続テスト
+        conn = get_db_connection()
+        conn.execute('SELECT 1')
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Health check failed: {e}")
+        return False
+
+# データベース初期化（アプリ起動時）
+print("Initializing database...")
 init_db()
+
+# ヘルスチェック
+if not health_check():
+    print("Warning: Health check failed, but continuing...")
+
+print("Flask application ready to start")
 
 # 認証デコレータ
 def login_required(f):
@@ -1054,3 +1093,26 @@ def add_task():
         print(f"Get categories error: {e}")
         flash(f'カテゴリの取得に失敗しました: {str(e)}', 'error')
         return render_template('add_task.html', categories=[])
+
+if __name__ == '__main__':
+    try:
+        # Renderでは環境変数PORTが自動設定される
+        port = int(os.environ.get('PORT', 5000))
+        host = '0.0.0.0'
+        
+        print(f"Starting Flask app on {host}:{port}")
+        
+        # Renderのプロダクション環境ではdebug=Falseにする
+        debug_mode = os.environ.get('FLASK_ENV') == 'development'
+        
+        app.run(
+            host=host,
+            port=port,
+            debug=debug_mode,
+            threaded=True
+        )
+    except Exception as e:
+        print(f"Error starting application: {e}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
