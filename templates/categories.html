@@ -1,0 +1,294 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-4">
+                <i class="fas fa-tags me-2"></i>カテゴリ管理
+            </h2>
+        </div>
+    </div>
+
+    <!-- フラッシュメッセージ表示 -->
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row">
+        <!-- カテゴリ追加フォーム -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">新しいカテゴリを追加</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('categories') }}">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">カテゴリ名</label>
+                            <input type="text" id="name" name="name" class="form-control" placeholder="例: 仕事" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label d-block">色を選択</label>
+                            <input type="hidden" name="color" id="selected-color" value="#007bff" required>
+
+                            <div class="d-flex flex-wrap gap-2">
+                                <div class="color-circle selected" data-color="#007bff" style="background-color: #007bff;"></div>
+                                <div class="color-circle" data-color="#28a745" style="background-color: #28a745;"></div>
+                                <div class="color-circle" data-color="#dc3545" style="background-color: #dc3545;"></div>
+                                <div class="color-circle" data-color="#ffc107" style="background-color: #ffc107;"></div>
+                                <div class="color-circle" data-color="#6f42c1" style="background-color: #6f42c1;"></div>
+                                <div class="color-circle" data-color="#fd7e14" style="background-color: #fd7e14;"></div>
+                                <div class="color-circle" data-color="#6c757d" style="background-color: #6c757d;"></div>
+                                <div class="color-circle" data-color="#20c997" style="background-color: #20c997;"></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">プレビュー:</label>
+                            <div>
+                                <span id="category-preview" class="badge" style="background-color: #007bff; font-size: 0.9rem; padding: 0.5rem 1rem;">
+                                    サンプル
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-plus me-2"></i>カテゴリを追加
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 既存のカテゴリ一覧 -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">既存のカテゴリ</h5>
+                </div>
+                <div class="card-body">
+                    {% if category_data %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>カテゴリ名</th>
+                                    <th>タスク数</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for category, count in category_data %}
+                                <tr>
+                                    <td>{{ category }}</td>
+                                    <td>
+                                        <span class="badge bg-primary">{{ count }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted">
+                        <i class="fas fa-folder-open fa-3x mb-3"></i>
+                        <p>カテゴリがありません。<br>新しいカテゴリを追加してください。</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ナビゲーション -->
+    <div class="row mt-4">
+        <div class="col-12 text-center">
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-home me-2"></i>ホームに戻る
+            </a>
+            <a href="{{ url_for('add_task') }}" class="btn btn-outline-primary">
+                <i class="fas fa-plus me-2"></i>新しいタスク
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.color-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid #e5e7eb;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.color-circle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.color-circle.selected {
+    border-color: #000;
+    border-width: 4px;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.color-circle.selected::after {
+    content: "✓";
+    color: white;
+    font-weight: bold;
+    font-size: 16px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.card {
+    border: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border-radius: 15px;
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+
+.card-header {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border-radius: 15px 15px 0 0 !important;
+    border: none;
+}
+
+.table {
+    margin-bottom: 0;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+    color: #495057;
+}
+
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.alert {
+    border: none;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.badge {
+    border-radius: 8px;
+}
+
+.form-control {
+    border-radius: 8px;
+    border: 2px solid #e5e7eb;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+#category-preview {
+    transition: all 0.3s ease;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const circles = document.querySelectorAll('.color-circle');
+    const selectedInput = document.getElementById('selected-color');
+    const nameInput = document.getElementById('name');
+    const preview = document.getElementById('category-preview');
+
+    // 色選択の処理
+    circles.forEach(function(circle) {
+        circle.addEventListener('click', function() {
+            // 全ての選択状態をリセット
+            circles.forEach(function(c) {
+                c.classList.remove('selected');
+            });
+
+            // クリックされた要素を選択状態に
+            circle.classList.add('selected');
+
+            // 隠しフィールドに値を設定
+            const color = circle.getAttribute('data-color');
+            selectedInput.value = color;
+
+            // プレビューを更新
+            updatePreview();
+        });
+    });
+
+    // 名前入力時のプレビュー更新
+    if (nameInput) {
+        nameInput.addEventListener('input', updatePreview);
+    }
+
+    // プレビュー更新関数
+    function updatePreview() {
+        if (preview) {
+            const name = nameInput ? nameInput.value.trim() : 'サンプル';
+            const color = selectedInput ? selectedInput.value : '#007bff';
+            
+            preview.textContent = name || 'サンプル';
+            preview.style.backgroundColor = color;
+        }
+    }
+
+    // 初期プレビューの設定
+    updatePreview();
+
+    // フォーム送信前のバリデーション
+    const form = document.querySelector('form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const name = nameInput.value.trim();
+            const color = selectedInput.value;
+
+            if (!name) {
+                e.preventDefault();
+                alert('カテゴリ名を入力してください。');
+                nameInput.focus();
+                return false;
+            }
+
+            if (!color) {
+                e.preventDefault();
+                alert('色を選択してください。');
+                return false;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

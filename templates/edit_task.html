@@ -30,10 +30,10 @@
     <div class="container mt-4">
         <div class="row">
             <div class="col-md-8 mx-auto">
-                <div class="card">
-                    <div class="card-header">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
                         <h3 class="mb-0">
-                            <i class="bi bi-pencil"></i> タスクを編集
+                            <i class="fas fa-edit me-2"></i>タスクを編集
                         </h3>
                     </div>
                     <div class="card-body">
@@ -48,23 +48,26 @@
                             {% endif %}
                         {% endwith %}
 
-                        <form method="POST">
+                        <form method="POST" action="{{ url_for('edit_task', task_id=task.id) }}">
                             <div class="mb-3">
-                                <label for="title" class="form-label">タスクタイトル *</label>
+                                <label for="title" class="form-label">
+                                    タスクタイトル <span class="text-danger">*</span>
+                                </label>
                                 <input type="text" class="form-control" id="title" name="title" 
-                                       value="{{ task['title'] }}" required>
+                                       value="{{ task.title }}" required>
                             </div>
 
                             <div class="mb-3">
                                 <label for="description" class="form-label">説明</label>
-                                <textarea class="form-control" id="description" name="description" rows="3">{{ task['description'] or '' }}</textarea>
+                                <textarea class="form-control" id="description" name="description" rows="3" 
+                                          placeholder="タスクの詳細を入力してください...">{{ task.description or '' }}</textarea>
                             </div>
 
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="due_date" class="form-label">期限日</label>
                                     <input type="date" class="form-control" id="due_date" name="due_date" 
-                                           value="{{ task['due_date'] or '' }}">
+                                           value="{{ task.due_date.strftime('%Y-%m-%d') if task.due_date else '' }}">
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="due_time" class="form-label">
@@ -72,38 +75,112 @@
                                         <small class="text-muted">(オプション)</small>
                                     </label>
                                     <input type="time" class="form-control" id="due_time" name="due_time" 
-                                           value="{{ task['due_time'] or '' }}">
+                                           value="{{ task.due_time.strftime('%H:%M') if task.due_time else '' }}">
                                     <div class="form-text">例: 14:30 (午後2時30分)</div>
                                 </div>
                             </div>
 
+                            <div class="alert alert-info mb-3">
+                                <small>
+                                    <i class="fas fa-info-circle me-1"></i> 
+                                    <strong>時刻指定のヒント:</strong><br>
+                                    • 期限日のみ: その日中に完了すべきタスク<br>
+                                    • 期限日+時刻: 特定の時間までに完了すべきタスク<br>
+                                    • 会議やアポイントメントには時刻指定がおすすめです
+                                </small>
+                            </div>
+
                             <div class="mb-3">
-                                <label for="priority" class="form-label">優先度</label>
-                                <select class="form-select" id="priority" name="priority">
-                                    <option value="low" {% if task['priority'] == 'low' %}selected{% endif %}>低</option>
-                                    <option value="medium" {% if task['priority'] == 'medium' %}selected{% endif %}>中</option>
-                                    <option value="high" {% if task['priority'] == 'high' %}selected{% endif %}>高</option>
+                                <label for="category_id" class="form-label">カテゴリ</label>
+                                <select class="form-select" id="category_id" name="category_id" onchange="checkOtherCategory(this)">
+                                    <option value="">選択してください</option>
+                                    {% for category in categories %}
+                                        <option value="{{ category.id }}" 
+                                                {% if task.category_id == category.id %}selected{% endif %}>
+                                            {{ category.name }}
+                                        </option>
+                                    {% endfor %}
+                                    <option value="other">+ その他のカテゴリを追加...</option>
                                 </select>
                             </div>
 
                             <div class="mb-3">
-                                <label for="category" class="form-label">カテゴリ</label>
-                                <input type="text" class="form-control" id="category" name="category" 
-                                       value="{{ task['category'] or '' }}" placeholder="例: 仕事, 個人, 勉強">
+                                <label class="form-label">優先度</label>
+                                <div class="d-flex">
+                                    <div class="form-check me-3">
+                                        <input class="form-check-input" type="radio" name="priority" id="priority-high" value="high" 
+                                               {% if task.priority == 'high' %}checked{% endif %}>
+                                        <label class="form-check-label text-danger" for="priority-high">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>高
+                                        </label>
+                                    </div>
+                                    <div class="form-check me-3">
+                                        <input class="form-check-input" type="radio" name="priority" id="priority-medium" value="medium" 
+                                               {% if task.priority == 'medium' %}checked{% endif %}>
+                                        <label class="form-check-label text-warning" for="priority-medium">
+                                            <i class="fas fa-minus me-1"></i>中
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="priority" id="priority-low" value="low" 
+                                               {% if task.priority == 'low' %}checked{% endif %}>
+                                        <label class="form-check-label text-success" for="priority-low">
+                                            <i class="fas fa-arrow-down me-1"></i>低
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div class="d-flex justify-content-between">
-                                <a href="{{ url_for('index') }}" class="btn btn-secondary">
-                                    <i class="bi bi-arrow-left"></i> 戻る
+                            <!-- 完了状態の切り替え -->
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="completed" name="completed" 
+                                           {% if task.completed %}checked{% endif %}>
+                                    <label class="form-check-label" for="completed">
+                                        <i class="fas fa-check-circle me-1"></i>完了済みとしてマーク
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- タスク情報表示 -->
+                            <div class="card bg-light mb-3">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-info-circle me-1"></i>タスク情報
+                                    </h6>
+                                    <div class="row">
+                                        <div class="col-sm-6">
+                                            <small class="text-muted">
+                                                <i class="fas fa-calendar-plus me-1"></i>
+                                                作成日: {{ task.created_at.strftime('%Y/%m/%d %H:%M') }}
+                                            </small>
+                                        </div>
+                                        {% if task.updated_at and task.updated_at != task.created_at %}
+                                        <div class="col-sm-6">
+                                            <small class="text-muted">
+                                                <i class="fas fa-edit me-1"></i>
+                                                最終更新: {{ task.updated_at.strftime('%Y/%m/%d %H:%M') }}
+                                            </small>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center">
+                                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-arrow-left me-1"></i>戻る
                                 </a>
-                                <div>
-                                    <a href="{{ url_for('delete_task', id=task['id']) }}" 
-                                       class="btn btn-outline-danger me-2"
-                                       onclick="return confirm('本当に削除しますか？');">
-                                        <i class="bi bi-trash"></i> 削除
-                                    </a>
+                                
+                                <div class="d-flex gap-2">
+                                    <!-- 削除ボタン -->
+                                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                                        <i class="fas fa-trash me-1"></i>削除
+                                    </button>
+                                    
+                                    <!-- 更新ボタン -->
                                     <button type="submit" class="btn btn-primary">
-                                        <i class="bi bi-check"></i> 更新
+                                        <i class="fas fa-save me-1"></i>更新
                                     </button>
                                 </div>
                             </div>
@@ -114,6 +191,65 @@
         </div>
     </div>
 
+    <!-- 削除確認モーダル -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-exclamation-triangle text-danger me-2"></i>
+                        タスクの削除
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>以下のタスクを削除しますか？</p>
+                    <div class="alert alert-warning">
+                        <strong>{{ task.title }}</strong>
+                    </div>
+                    <p class="text-danger">
+                        <small><i class="fas fa-exclamation-triangle me-1"></i>この操作は取り消せません。</small>
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        キャンセル
+                    </button>
+                    <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash me-1"></i>削除する
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}
+    <script>
+        function checkOtherCategory(select) {
+            if (select.value === "other") {
+                window.location.href = "{{ url_for('categories') }}";
+            }
+        }
+
+        // 今日の日付を最小値として設定
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('due_date').setAttribute('min', today);
+            
+            // フォーム送信時の確認
+            document.querySelector('form').addEventListener('submit', function(e) {
+                const title = document.getElementById('title').value.trim();
+                if (!title) {
+                    e.preventDefault();
+                    alert('タスクタイトルを入力してください。');
+                    document.getElementById('title').focus();
+                }
+            });
+        });
+    </script>
+    {% endblock %}
 </body>
 </html>

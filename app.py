@@ -22,6 +22,12 @@ app.secret_key = 'your-secret-key-here-change-in-production'
 # Database setup
 DB_PATH = 'tasks.db'
 
+# デフォルトカテゴリカラー
+DEFAULT_COLORS = [
+    "#F82A1B", "#FF9800", "#FFDD02", "#53EB38", "#03A9F4",
+    "#2635FF", "#902DEE", "#FF80CC", "#795548", "#7DA0B2"
+]
+
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -41,7 +47,19 @@ def init_db():
     )
     ''')
     
-    # タスクテーブル（due_timeを追加）
+    # カテゴリテーブル（新規追加）
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+    ''')
+    
+    # タスクテーブル（category_idを追加）
     conn.execute('''
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,21 +68,39 @@ def init_db():
         due_date TEXT,
         due_time TEXT,
         category TEXT,
+        category_id INTEGER,
         priority TEXT,
         completed INTEGER DEFAULT 0,
         user_id INTEGER,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (category_id) REFERENCES categories (id)
     )
     ''')
     
-    # 既存のテーブルにdue_timeカラムを追加（既存データ対応）
+    # 既存のテーブルに新しいカラムを追加（既存データ対応）
     try:
         conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
         conn.commit()
     except sqlite3.OperationalError:
-        # カラムが既に存在する場合は無視
         pass
+    
+    try:
+        conn.execute('ALTER TABLE tasks ADD COLUMN category_id INTEGER')
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    
+    # デフォルトカテゴリの作成（グローバル）
+    existing_global_categories = conn.execute('SELECT COUNT(*) FROM categories WHERE user_id IS NULL').fetchone()[0]
+    if existing_global_categories == 0:
+        default_categories = [
+            ('仕事', DEFAULT_COLORS[0], None),
+            ('個人', DEFAULT_COLORS[1], None),
+            ('勉強', DEFAULT_COLORS[2], None)
+        ]
+        conn.executemany('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', default_categories)
+        conn.commit()
     
     conn.commit()
     conn.close()
@@ -163,10 +199,15 @@ def index():
     user_id = get_current_user_id()
     
     if user_id:
-        # 認証ユーザーのタスクのみ取得
+        # 認証ユーザーのタスクをカテゴリ情報と一緒に取得
         conn = get_db_connection()
-        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ? ORDER BY completed, due_date ASC', 
-                           (user_id,)).fetchall()
+        tasks = conn.execute('''
+            SELECT tasks.*, categories.name AS category_name, categories.color AS category_color
+            FROM tasks 
+            LEFT JOIN categories ON tasks.category_id = categories.id
+            WHERE tasks.user_id = ? 
+            ORDER BY completed, due_date ASC
+        ''', (user_id,)).fetchall()
         conn.close()
     else:
         # ゲストモードの場合、セッション内のタスクを使用
@@ -175,6 +216,45 @@ def index():
     is_guest = 'guest_mode' in session
     return render_template('index.html', tasks=tasks, is_guest=is_guest)
 
+@app.route('/categories', methods=['GET', 'POST'])
+@login_required
+def categories():
+    """カテゴリ管理ページ"""
+    user_id = get_current_user_id()
+    
+    if request.method == 'POST' and user_id:  # ゲストモードでは作成不可
+        name = request.form['name']
+        color = request.form['color']
+        
+        conn = get_db_connection()
+        try:
+            # ユーザー固有のカテゴリとして作成
+            conn.execute('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', 
+                        (name, color, user_id))
+            conn.commit()
+            flash('カテゴリを追加しました！', 'success')
+        except sqlite3.IntegrityError:
+            flash('同じ名前のカテゴリが既に存在します。', 'error')
+        conn.close()
+        return redirect(url_for('categories'))
+    
+    # カテゴリ一覧を取得
+    conn = get_db_connection()
+    if user_id:
+        # 認証ユーザー：グローバルカテゴリ + ユーザー固有カテゴリ
+        categories = conn.execute('''
+            SELECT * FROM categories 
+            WHERE user_id IS NULL OR user_id = ? 
+            ORDER BY user_id IS NULL DESC, name ASC
+        ''', (user_id,)).fetchall()
+    else:
+        # ゲストモード：グローバルカテゴリのみ
+        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name ASC').fetchall()
+    conn.close()
+    
+    is_guest = 'guest_mode' in session
+    return render_template('categories.html', categories=categories, colors=DEFAULT_COLORS, is_guest=is_guest)
+
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
 def add_task():
@@ -182,17 +262,22 @@ def add_task():
         title = request.form['title']
         description = request.form.get('description', '')
         due_date = request.form.get('due_date', '')
-        due_time = request.form.get('due_time', '')  # 新しく追加
+        due_time = request.form.get('due_time', '')
         category = request.form.get('category', '')
+        category_id = request.form.get('category_id')  # 新規追加
         priority = request.form.get('priority', 'medium')
+        
+        # category_idが空文字列の場合はNoneに変換
+        if category_id == '':
+            category_id = None
         
         user_id = get_current_user_id()
         
         if user_id:
             # 認証ユーザーの場合、データベースに保存
             conn = get_db_connection()
-            conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        (title, description, due_date, due_time, category, priority, user_id))
+            conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, category_id, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        (title, description, due_date, due_time, category, category_id, priority, user_id))
             conn.commit()
             conn.close()
         else:
@@ -209,8 +294,9 @@ def add_task():
                 'title': title,
                 'description': description,
                 'due_date': due_date,
-                'due_time': due_time,  # 新しく追加
+                'due_time': due_time,
                 'category': category,
+                'category_id': category_id,
                 'priority': priority,
                 'completed': 0,
                 'created_at': datetime.now().isoformat()
@@ -223,7 +309,20 @@ def add_task():
         flash('タスクを追加しました！', 'success')
         return redirect(url_for('index'))
     
-    return render_template('add_task.html')
+    # カテゴリ一覧を取得
+    user_id = get_current_user_id()
+    conn = get_db_connection()
+    if user_id:
+        categories = conn.execute('''
+            SELECT * FROM categories 
+            WHERE user_id IS NULL OR user_id = ? 
+            ORDER BY user_id IS NULL DESC, name ASC
+        ''', (user_id,)).fetchall()
+    else:
+        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name ASC').fetchall()
+    conn.close()
+    
+    return render_template('add_task.html', categories=categories)
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -244,18 +343,36 @@ def edit_task(id):
             title = request.form['title']
             description = request.form.get('description', '')
             due_date = request.form.get('due_date', '')
-            due_time = request.form.get('due_time', '')  # 新しく追加
+            due_time = request.form.get('due_time', '')
             category = request.form.get('category', '')
+            category_id = request.form.get('category_id')
             priority = request.form.get('priority', 'medium')
             
-            conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, due_time = ?, category = ?, priority = ? WHERE id = ? AND user_id = ?',
-                        (title, description, due_date, due_time, category, priority, id, user_id))
+            # category_idが空文字列の場合はNoneに変換
+            if category_id == '':
+                category_id = None
+            
+            conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, due_time = ?, category = ?, category_id = ?, priority = ? WHERE id = ? AND user_id = ?',
+                        (title, description, due_date, due_time, category, category_id, priority, id, user_id))
             conn.commit()
+            
+            # カテゴリ一覧を取得
+            categories = conn.execute('''
+                SELECT * FROM categories 
+                WHERE user_id IS NULL OR user_id = ? 
+                ORDER BY user_id IS NULL DESC, name ASC
+            ''', (user_id,)).fetchall()
             conn.close()
             
             flash('タスクを更新しました！', 'success')
             return redirect(url_for('index'))
         
+        # カテゴリ一覧を取得
+        categories = conn.execute('''
+            SELECT * FROM categories 
+            WHERE user_id IS NULL OR user_id = ? 
+            ORDER BY user_id IS NULL DESC, name ASC
+        ''', (user_id,)).fetchall()
         conn.close()
     else:
         # ゲストモードの場合
@@ -270,8 +387,9 @@ def edit_task(id):
             title = request.form['title']
             description = request.form.get('description', '')
             due_date = request.form.get('due_date', '')
-            due_time = request.form.get('due_time', '')  # 新しく追加
+            due_time = request.form.get('due_time', '')
             category = request.form.get('category', '')
+            category_id = request.form.get('category_id')
             priority = request.form.get('priority', 'medium')
             
             # ゲストタスクを更新
@@ -282,8 +400,9 @@ def edit_task(id):
                         'title': title,
                         'description': description,
                         'due_date': due_date,
-                        'due_time': due_time,  # 新しく追加
+                        'due_time': due_time,
                         'category': category,
+                        'category_id': category_id,
                         'priority': priority
                     })
                     break
@@ -291,8 +410,13 @@ def edit_task(id):
             session['guest_tasks'] = guest_tasks
             flash('タスクを更新しました！', 'success')
             return redirect(url_for('index'))
+        
+        # ゲストモード用のカテゴリ一覧
+        conn = get_db_connection()
+        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name ASC').fetchall()
+        conn.close()
     
-    return render_template('edit_task.html', task=task)
+    return render_template('edit_task.html', task=task, categories=categories)
 
 @app.route('/delete/<int:id>')
 @login_required
@@ -352,7 +476,13 @@ def analytics():
     
     if user_id:
         conn = get_db_connection()
-        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        # カテゴリ情報も含めて取得
+        tasks = conn.execute('''
+            SELECT tasks.*, categories.name AS category_name, categories.color AS category_color
+            FROM tasks 
+            LEFT JOIN categories ON tasks.category_id = categories.id
+            WHERE tasks.user_id = ?
+        ''', (user_id,)).fetchall()
         conn.close()
     else:
         tasks = session.get('guest_tasks', [])
@@ -362,10 +492,14 @@ def analytics():
     completed_tasks = sum(1 for task in tasks if task['completed'])
     incomplete_tasks = total_tasks - completed_tasks
     
-    # カテゴリ別統計
+    # カテゴリ別統計（新しいカテゴリシステム対応）
     category_stats = defaultdict(lambda: {'total': 0, 'completed': 0})
     for task in tasks:
-        category = task['category'] if task['category'] else '未分類'
+        if hasattr(task, 'category_name') and task['category_name']:
+            category = task['category_name']
+        else:
+            category = task['category'] if task['category'] else '未分類'
+        
         category_stats[category]['total'] += 1
         if task['completed']:
             category_stats[category]['completed'] += 1
@@ -400,7 +534,12 @@ def generate_category_pie_chart(tasks, font_prop):
     """カテゴリ別円グラフ"""
     category_counts = defaultdict(int)
     for task in tasks:
-        category_counts[task['category']] += 1
+        # 新しいカテゴリシステムに対応
+        if hasattr(task, 'category_name') and task['category_name']:
+            category = task['category_name']
+        else:
+            category = task['category'] if task['category'] else '未分類'
+        category_counts[category] += 1
     
     if not category_counts:
         return create_empty_chart("No data available")
@@ -464,7 +603,12 @@ def generate_category_stacked_chart(tasks, font_prop):
     category_data = defaultdict(lambda: {'completed': 0, 'incomplete': 0})
     
     for task in tasks:
-        category = task['category']
+        # 新しいカテゴリシステムに対応
+        if hasattr(task, 'category_name') and task['category_name']:
+            category = task['category_name']
+        else:
+            category = task['category'] if task['category'] else '未分類'
+            
         if task['completed']:
             category_data[category]['completed'] += 1
         else:
@@ -517,7 +661,12 @@ def generate_chart(chart_type):
     
     if user_id:
         conn = get_db_connection()
-        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        tasks = conn.execute('''
+            SELECT tasks.*, categories.name AS category_name, categories.color AS category_color
+            FROM tasks 
+            LEFT JOIN categories ON tasks.category_id = categories.id
+            WHERE tasks.user_id = ?
+        ''', (user_id,)).fetchall()
         conn.close()
     else:
         tasks = session.get('guest_tasks', [])
@@ -532,6 +681,11 @@ def generate_chart(chart_type):
             'completed': bool(task['completed']),
             'due_date': task['due_date']
         }
+        
+        # 新しいカテゴリシステムに対応
+        if hasattr(task, 'category_name') and task['category_name']:
+            task_dict['category_name'] = task['category_name']
+        
         task_list.append(task_dict)
     
     # matplotlib設定
@@ -557,7 +711,12 @@ def export_stats():
     
     if user_id:
         conn = get_db_connection()
-        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        tasks = conn.execute('''
+            SELECT tasks.*, categories.name AS category_name, categories.color AS category_color
+            FROM tasks 
+            LEFT JOIN categories ON tasks.category_id = categories.id
+            WHERE tasks.user_id = ?
+        ''', (user_id,)).fetchall()
         conn.close()
     else:
         tasks = session.get('guest_tasks', [])
@@ -570,11 +729,18 @@ def export_stats():
             'title': task['title'],
             'description': task['description'] or '',
             'due_date': task['due_date'] or '',
+            'due_time': task.get('due_time', '') or '',
             'category': task['category'] or '',
             'priority': task['priority'] or 'medium',
             'completed': bool(task['completed']),
             'created_at': task.get('created_at', '')
         }
+        
+        # 新しいカテゴリ情報を追加
+        if hasattr(task, 'category_name') and task['category_name']:
+            task_dict['category_name'] = task['category_name']
+            task_dict['category_color'] = task.get('category_color', '')
+        
         task_list.append(task_dict)
     
     # 統計データを作成
