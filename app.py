@@ -870,73 +870,182 @@ def export_stats():
     
     return jsonify(stats_data)
 
-@app.route('/delete_category/<int:category_id>')
+@app.route('/delete_category/<int:category_id>', methods=['POST'])
 @login_required
 def delete_category(category_id):
-    """カテゴリ削除処理"""
-    user_id = get_current_user_id()
-    
-    if not user_id:  # ゲストモードでは削除不可
-        flash('ゲストモードではカテゴリの削除はできません。', 'error')
-        return redirect(url_for('categories'))
-    
-    conn = get_db_connection()
     try:
-        # ユーザー固有のカテゴリのみ削除可能
-        result = conn.execute('DELETE FROM categories WHERE id = ? AND user_id = ?', 
-                            (category_id, user_id))
-        if result.rowcount > 0:
-            conn.commit()
-            flash('カテゴリを削除しました。', 'success')
+        if 'guest_mode' in session:
+            # ゲストモード：セッションから削除
+            guest_categories = session.get('guest_categories', [])
+            session['guest_categories'] = [cat for cat in guest_categories if cat['id'] != category_id]
+            session.modified = True
+            flash('カテゴリを削除しました。（ゲストモード）', 'success')
         else:
-            flash('カテゴリが見つからないか、削除権限がありません。', 'error')
+            # ログインユーザー：データベースから削除
+            conn = get_db_connection()
+            
+            # カテゴリを取得してチェック
+            category = conn.execute(
+                'SELECT * FROM categories WHERE id = ?', (category_id,)
+            ).fetchone()
+            
+            if not category:
+                flash('カテゴリが見つかりません。', 'error')
+                conn.close()
+                return redirect(url_for('categories'))
+            
+            # このカテゴリを使用しているタスクのカテゴリをクリア
+            conn.execute(
+                'UPDATE tasks SET category_id = NULL, category = NULL WHERE category_id = ? OR category = ?',
+                (category_id, category['name'])
+            )
+            
+            # カテゴリを削除
+            conn.execute('DELETE FROM categories WHERE id = ?', (category_id,))
+            conn.commit()
+            conn.close()
+            
+            flash(f'カテゴリ「{category["name"]}」を削除しました。', 'success')
+    
     except Exception as e:
-        flash('カテゴリの削除中にエラーが発生しました。', 'error')
-    finally:
-        conn.close()
+        print(f"Delete category error: {e}")
+        flash(f'カテゴリの削除に失敗しました: {str(e)}', 'error')
     
     return redirect(url_for('categories'))
 
-if __name__ == '__main__':
-    app.run(debug=True)
-
-import sqlite3
-import os
-
-# データベース接続
-conn = sqlite3.connect('tasks.db')
-cursor = conn.cursor()
-
-# categoriesテーブルを作成（存在しない場合）
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        color TEXT NOT NULL DEFAULT '#007bff',
-        user_id INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )
-''')
-
-# デフォルトカテゴリを挿入（重複を避ける）
-default_categories = [
-    ('仕事', '#F82A1B'),
-    ('個人', '#53EB38'),
-    ('勉強', '#03A9F4'),
-    ('健康', '#FF9800'),
-    ('趣味', '#902DEE')
-]
-
-for name, color in default_categories:
+# add_taskルートでカテゴリ選択を改善
+@app.route('/add_task', methods=['GET', 'POST'])
+@login_required
+def add_task():
+    if request.method == 'POST':
+        title = request.form.get('title')
+        description = request.form.get('description')
+        due_date = request.form.get('due_date')
+        due_time = request.form.get('due_time')
+        priority = request.form.get('priority', 'medium')
+        category_id = request.form.get('category_id')
+        new_category = request.form.get('new_category')
+        
+        if not title:
+            flash('タスクタイトルを入力してください。', 'error')
+            return redirect(url_for('add_task'))
+        
+        try:
+            # 新規カテゴリの場合
+            if category_id == 'other' and new_category:
+                if 'guest_mode' in session:
+                    # ゲストモード：セッションに追加
+                    if 'guest_categories' not in session:
+                        session['guest_categories'] = []
+                    
+                    # 新しいカテゴリを作成
+                    new_cat_id = len(session['guest_categories']) + 1000
+                    new_cat = {
+                        'id': new_cat_id,
+                        'name': new_category,
+                        'color': '#007bff',  # デフォルト色
+                        'user_id': None
+                    }
+                    session['guest_categories'].append(new_cat)
+                    session.modified = True
+                    category_name = new_category
+                else:
+                    # データベースに追加
+                    conn = get_db_connection()
+                    cursor = conn.execute(
+                        'INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)',
+                        (new_category, '#007bff', session.get('user_id'))
+                    )
+                    category_id = cursor.lastrowid
+                    category_name = new_category
+                    conn.commit()
+                    conn.close()
+            
+            # 既存カテゴリの場合
+            elif category_id and category_id != 'other':
+                if 'guest_mode' in session:
+                    # ゲストモード：カテゴリ名を取得
+                    all_categories = []
+                    # デフォルトカテゴリ
+                    conn = get_db_connection()
+                    db_cats = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
+                    all_categories.extend([{'id': cat['id'], 'name': cat['name'], 'color': cat['color']} for cat in db_cats])
+                    conn.close()
+                    # ゲストカテゴリ
+                    all_categories.extend(session.get('guest_categories', []))
+                    
+                    selected_cat = next((cat for cat in all_categories if str(cat['id']) == str(category_id)), None)
+                    category_name = selected_cat['name'] if selected_cat else None
+                else:
+                    # データベースからカテゴリ名を取得
+                    conn = get_db_connection()
+                    cat = conn.execute('SELECT name FROM categories WHERE id = ?', (category_id,)).fetchone()
+                    category_name = cat['name'] if cat else None
+                    conn.close()
+            else:
+                category_name = None
+            
+            # タスクを追加
+            if 'guest_mode' in session:
+                # ゲストモード：セッションに保存
+                if 'guest_tasks' not in session:
+                    session['guest_tasks'] = []
+                
+                task = {
+                    'id': len(session['guest_tasks']) + 1,
+                    'title': title,
+                    'description': description,
+                    'due_date': due_date,
+                    'due_time': due_time,
+                    'priority': priority,
+                    'category': category_name,
+                    'completed': False,
+                    'created_at': datetime.now().isoformat()
+                }
+                session['guest_tasks'].append(task)
+                session.modified = True
+            else:
+                # データベースに保存
+                conn = get_db_connection()
+                conn.execute('''
+                    INSERT INTO tasks (title, description, due_date, due_time, priority, category_id, category, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (title, description, due_date, due_time, priority, category_id, category_name, session.get('user_id')))
+                conn.commit()
+                conn.close()
+            
+            flash('タスクを追加しました。', 'success')
+            return redirect(url_for('index'))
+        
+        except Exception as e:
+            print(f"Add task error: {e}")
+            flash(f'タスクの追加に失敗しました: {str(e)}', 'error')
+    
+    # GET request：カテゴリ一覧を取得
     try:
-        cursor.execute(
-            'INSERT OR IGNORE INTO categories (name, color, user_id) VALUES (?, ?, NULL)',
-            (name, color)
-        )
-    except sqlite3.IntegrityError:
-        pass  # 既に存在する場合は無視
-
-conn.commit()
-conn.close()
-print("categoriesテーブルを作成し、デフォルトカテゴリを追加しました。")
+        if 'guest_mode' in session:
+            # ゲストモード
+            conn = get_db_connection()
+            db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
+            conn.close()
+            
+            categories = [{'id': cat['id'], 'name': cat['name'], 'color': cat['color']} for cat in db_categories]
+            categories.extend(session.get('guest_categories', []))
+        else:
+            # ログインユーザー
+            conn = get_db_connection()
+            user_id = session.get('user_id')
+            db_categories = conn.execute(
+                'SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC',
+                (user_id,)
+            ).fetchall()
+            conn.close()
+            
+            categories = [{'id': cat['id'], 'name': cat['name'], 'color': cat['color']} for cat in db_categories]
+        
+        return render_template('add_task.html', categories=categories)
+    
+    except Exception as e:
+        print(f"Get categories error: {e}")
+        flash(f'カテゴリの取得に失敗しました: {str(e)}', 'error')
+        return render_template('add_task.html', categories=[])

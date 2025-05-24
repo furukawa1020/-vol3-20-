@@ -139,6 +139,7 @@
                                                 <th>カテゴリ名</th>
                                                 <th>色</th>
                                                 <th>タスク数</th>
+                                                <th>操作</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -166,6 +167,15 @@
                                                             0
                                                         {% endif %}
                                                     </span>
+                                                </td>
+                                                <td>
+                                                    <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" 
+                                                          onsubmit="return confirm('カテゴリ「{{ category.name }}」を削除しますか？\n※このカテゴリを使用しているタスクからカテゴリ情報が削除されます。')" 
+                                                          style="display: inline;">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                            <i class="bi bi-trash"></i> 削除
+                                                        </button>
+                                                    </form>
                                                 </td>
                                             </tr>
                                             {% endfor %}
