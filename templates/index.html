@@ -37,6 +37,13 @@
             font-size: 0.75rem;
             color: #495057;
         }
+        .guest-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -47,7 +54,7 @@
             </a>
             <div class="navbar-nav ms-auto">
                 <a class="nav-link active" href="{{ url_for('index') }}">
-                    <i class="bi bi-house"></i> ホーム
+                    <i class="bi bi-house"></i> ダッシュボード
                 </a>
                 <a class="nav-link" href="{{ url_for('add_task') }}">
                     <i class="bi bi-plus-circle"></i> 新規タスク
@@ -55,15 +62,45 @@
                 <a class="nav-link" href="{{ url_for('analytics') }}">
                     <i class="bi bi-bar-chart"></i> 分析
                 </a>
+                {% if is_guest %}
+                    <span class="nav-link text-warning">
+                        <i class="bi bi-person-dash"></i> ゲストモード
+                    </span>
+                {% else %}
+                    <span class="nav-link">
+                        <i class="bi bi-person-check"></i> {{ session.username }}
+                    </span>
+                {% endif %}
+                <a class="nav-link" href="{{ url_for('logout') }}">
+                    <i class="bi bi-box-arrow-right"></i> ログアウト
+                </a>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
+        {% if is_guest %}
+        <div class="guest-banner">
+            <div class="row align-items-center">
+                <div class="col">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle"></i> ゲストモードで利用中
+                    </h5>
+                    <small>データはセッション中のみ保存されます。永続保存するにはアカウントを作成してください。</small>
+                </div>
+                <div class="col-auto">
+                    <a href="{{ url_for('register') }}" class="btn btn-light btn-sm">
+                        <i class="bi bi-person-plus"></i> アカウント作成
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show">
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category if category in ['success', 'info', 'warning'] else 'info' }} alert-dismissible fade show">
                         {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>

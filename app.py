@@ -371,11 +371,17 @@ def analytics():
                          is_guest=is_guest)
 
 @app.route('/chart/<chart_type>')
+@login_required  # この行を追加
 def generate_chart(chart_type):
     """チャート画像を生成"""
-    conn = get_db_connection()
-    tasks = conn.execute('SELECT * FROM tasks').fetchall()
-    conn.close()
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        conn.close()
+    else:
+        tasks = session.get('guest_tasks', [])
     
     # タスクデータをリスト形式に変換
     task_list = []
@@ -403,6 +409,48 @@ def generate_chart(chart_type):
         return generate_category_stacked_chart(task_list, font_prop)
     
     return '', 404
+
+@app.route('/export_stats')
+@login_required  # この行を追加
+def export_stats():
+    """統計データをJSONでエクスポート"""
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        conn.close()
+    else:
+        tasks = session.get('guest_tasks', [])
+    
+    # タスクデータを辞書形式に変換
+    task_list = []
+    for task in tasks:
+        task_dict = {
+            'id': task['id'],
+            'title': task['title'],
+            'description': task['description'],
+            'due_date': task['due_date'],
+            'category': task['category'],
+            'priority': task['priority'],
+            'completed': bool(task['completed']),
+            'created_at': task.get('created_at', '')
+        }
+        task_list.append(task_dict)
+    
+    # 統計データを作成
+    stats_data = {
+        "export_date": datetime.now().isoformat(),
+        "tasks": task_list,
+        "summary": {
+            "total_tasks": len(task_list),
+            "completed_tasks": sum(1 for task in task_list if task['completed']),
+            "categories": list(set(task['category'] for task in task_list if task['category'])),
+            "priorities": list(set(task['priority'] for task in task_list if task['priority']))
+        }
+    }
+    
+    return jsonify(stats_data)
 
 def setup_japanese_font():
     """日本語フォントの設定"""
@@ -529,11 +577,17 @@ def create_empty_chart(message):
     return create_chart_response()
 
 @app.route('/export_stats')
+@login_required  # この行を追加
 def export_stats():
     """統計データをJSONでエクスポート"""
-    conn = get_db_connection()
-    tasks = conn.execute('SELECT * FROM tasks').fetchall()
-    conn.close()
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        conn.close()
+    else:
+        tasks = session.get('guest_tasks', [])
     
     # タスクデータを辞書形式に変換
     task_list = []
@@ -546,7 +600,7 @@ def export_stats():
             'category': task['category'],
             'priority': task['priority'],
             'completed': bool(task['completed']),
-            'created_at': task['created_at']
+            'created_at': task.get('created_at', '')
         }
         task_list.append(task_dict)
     
