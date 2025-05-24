@@ -44,6 +44,18 @@
             margin-bottom: 1rem;
             border-radius: 8px;
         }
+        .divider-vertical {
+            width: 2px;
+            background: white;
+            min-height: 400px;
+            height: 100%;
+            margin: 0 1rem;
+        }
+        @media (max-width: 991.98px) {
+            .divider-vertical {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -108,22 +120,24 @@
             {% endif %}
         {% endwith %}
 
-        <div class="row mb-4">
-            <div class="col">
-                <h1>
-                    <i class="bi bi-list-task"></i> タスク一覧
-                </h1>
-            </div>
-            <div class="col-auto">
-                <a href="{{ url_for('add_task') }}" class="btn btn-primary">
-                    <i class="bi bi-plus-lg"></i> 新しいタスク
-                </a>
-            </div>
-        </div>
-
-        {% if tasks %}
-            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-                {% for task in tasks %}
+        <div class="row flex-nowrap" style="min-height: 600px;">
+            <!-- 左カラム：タスク一覧 -->
+            <div class="col-lg-9 col-md-8 col-12 mb-4">
+                <div class="row mb-4">
+                    <div class="col">
+                        <h1>
+                            <i class="bi bi-list-task"></i> タスク一覧
+                        </h1>
+                    </div>
+                    <div class="col-auto">
+                        <a href="{{ url_for('add_task') }}" class="btn btn-primary">
+                            <i class="bi bi-plus-lg"></i> 新しいタスク
+                        </a>
+                    </div>
+                </div>
+                {% if tasks %}
+                <div class="row row-cols-1 row-cols-md-2 g-4">
+                    {% for task in tasks %}
                     <div class="col">
                         <div class="card task-card priority-{{ task['priority'] }} {% if task['completed'] %}completed-task{% endif %}">
                             <div class="card-body">
@@ -136,15 +150,12 @@
                                                onchange="completeTask(this)">
                                     </div>
                                 </div>
-                                
                                 {% if task['category'] %}
                                     <span class="category-badge mb-2">{{ task['category'] }}</span>
                                 {% endif %}
-                                
                                 {% if task['description'] %}
                                     <p class="card-text">{{ task['description'] }}</p>
                                 {% endif %}
-                                
                                 <div class="d-flex justify-content-between align-items-center mt-3">
                                     <div>
                                         {% if task['due_date'] %}
@@ -167,20 +178,31 @@
                             </div>
                         </div>
                     </div>
-                {% endfor %}
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <h4 class="alert-heading">
+                        <i class="bi bi-info-circle"></i> タスクがありません
+                    </h4>
+                    <p>新しいタスクを追加して始めましょう！</p>
+                    <hr>
+                    <a href="{{ url_for('add_task') }}" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> 最初のタスクを作成
+                    </a>
+                </div>
+                {% endif %}
             </div>
-        {% else %}
-            <div class="alert alert-info">
-                <h4 class="alert-heading">
-                    <i class="bi bi-info-circle"></i> タスクがありません
-                </h4>
-                <p>新しいタスクを追加して始めましょう！</p>
-                <hr>
-                <a href="{{ url_for('add_task') }}" class="btn btn-primary">
-                    <i class="bi bi-plus-circle"></i> 最初のタスクを作成
-                </a>
+            <!-- 仕切り線 -->
+            <div class="divider-vertical d-none d-lg-block"></div>
+            <!-- 右カラム：時計のみ -->
+            <div class="col-lg-3 col-md-4 col-12 d-flex flex-column align-items-center justify-content-start">
+                <div class="my-3">
+                    <canvas id="analogClock" width="220" height="220"
+                        style="border-radius: 16px; box-shadow: 0 2px 8px #aaa;"></canvas>
+                </div>
             </div>
-        {% endif %}
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -189,6 +211,80 @@
             const taskId = element.getAttribute('data-task-id');
             window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
         }
+
+        // アナログ時計（数字が正確な位置に表示されるよう修正済み）
+        function drawAnalogClock() {
+            const canvas = document.getElementById('analogClock');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const size = 200, padding = 10;
+            const cx = size/2 + padding, cy = size/2 + padding;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 外枠
+            ctx.beginPath();
+            ctx.arc(cx, cy, size/2, 0, 2*Math.PI);
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = "#00BFFF";
+            ctx.stroke();
+
+            // 盤面
+            ctx.beginPath();
+            ctx.arc(cx, cy, size/2-3, 0, 2*Math.PI);
+            ctx.fillStyle = "#fff";
+            ctx.fill();
+
+            // クロスポイント
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, 2*Math.PI);
+            ctx.fillStyle = "#000";
+            ctx.fill();
+
+            // 12, 3, 6, 9 の数字を正しい位置に
+            ctx.font = "20px Oranienbaum,serif";
+            ctx.fillStyle = "#000";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            // 12
+            ctx.fillText("12", cx, cy - (size/2 - 28));
+            // 3
+            ctx.fillText("3", cx + (size/2 - 28), cy);
+            // 6
+            ctx.fillText("6", cx, cy + (size/2 - 28));
+            // 9
+            ctx.fillText("9", cx - (size/2 - 28), cy);
+
+            // 現在時刻（分は5分単位で丸め）
+            const now = new Date();
+            let hour = now.getHours();
+            let minute = now.getMinutes();
+            let roundedMinute = Math.round(minute / 5) * 5;
+            if (roundedMinute === 60) {
+                roundedMinute = 0;
+                hour = (hour + 1) % 24;
+            }
+
+            // 分針
+            const minAngle = (roundedMinute/60)*2*Math.PI - Math.PI/2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + (size*0.42)*Math.cos(minAngle), cy + (size*0.42)*Math.sin(minAngle));
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#000";
+            ctx.stroke();
+
+            // 時針
+            const hourAngle = ((hour%12)/12 + roundedMinute/720)*2*Math.PI - Math.PI/2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + (size*0.30)*Math.cos(hourAngle), cy + (size*0.30)*Math.sin(hourAngle));
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = "#000";
+            ctx.stroke();
+        }
+
+        window.addEventListener('DOMContentLoaded', drawAnalogClock);
+        setInterval(drawAnalogClock, 60*1000);
     </script>
 </body>
 </html>
