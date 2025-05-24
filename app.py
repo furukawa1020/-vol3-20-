@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 import sqlite3
 from datetime import datetime, timedelta
 import os
 import json
 from collections import defaultdict
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 # matplotlib設定をインポート前に行う
 import matplotlib
@@ -15,7 +17,7 @@ import base64
 
 # Create the Flask application
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'
+app.secret_key = 'your-secret-key-here-change-in-production'
 
 # Database setup
 DB_PATH = 'tasks.db'
@@ -27,6 +29,19 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
+    
+    # ユーザーテーブル
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # タスクテーブル（user_idを追加）
     conn.execute('''
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,122 +51,294 @@ def init_db():
         category TEXT,
         priority TEXT,
         completed INTEGER DEFAULT 0,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
     )
     ''')
+    
     conn.commit()
     conn.close()
 
 # Initialize the database
 init_db()
 
+# 認証デコレータ
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session and 'guest_mode' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_current_user_id():
+    """現在のユーザーIDを取得（ゲストの場合はNone）"""
+    if 'guest_mode' in session:
+        return None
+    return session.get('user_id')
+
 @app.route('/')
+def landing():
+    """ランディングページ"""
+    return render_template('landing.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        conn.close()
+        
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            flash('ログインしました！', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('ユーザー名またはパスワードが正しくありません。', 'error')
+    
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+        confirm_password = request.form['confirm_password']
+        
+        if password != confirm_password:
+            flash('パスワードが一致しません。', 'error')
+            return render_template('register.html')
+        
+        if len(password) < 6:
+            flash('パスワードは6文字以上で入力してください。', 'error')
+            return render_template('register.html')
+        
+        password_hash = generate_password_hash(password)
+        
+        conn = get_db_connection()
+        try:
+            conn.execute('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+                        (username, email, password_hash))
+            conn.commit()
+            conn.close()
+            flash('アカウントが作成されました！ログインしてください。', 'success')
+            return redirect(url_for('login'))
+        except sqlite3.IntegrityError:
+            conn.close()
+            flash('このユーザー名またはメールアドレスは既に使用されています。', 'error')
+    
+    return render_template('register.html')
+
+@app.route('/guest')
+def guest_mode():
+    """ゲストモードで開始"""
+    session['guest_mode'] = True
+    flash('ゲストモードで開始しました。データは保存されません。', 'info')
+    return redirect(url_for('index'))
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('ログアウトしました。', 'info')
+    return redirect(url_for('landing'))
+
+@app.route('/dashboard')
+@login_required
 def index():
+    user_id = get_current_user_id()
+    
     conn = get_db_connection()
-    tasks = conn.execute('SELECT * FROM tasks ORDER BY completed, due_date ASC').fetchall()
+    if user_id:
+        # 認証ユーザーのタスクのみ取得
+        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ? ORDER BY completed, due_date ASC', 
+                           (user_id,)).fetchall()
+    else:
+        # ゲストモードの場合、セッション内のタスクを使用
+        tasks = session.get('guest_tasks', [])
+        # SQLiteのRowオブジェクトに似た辞書形式に変換
+        tasks = [dict(task) for task in tasks]
+    
     conn.close()
-    return render_template('index.html', tasks=tasks)
+    
+    is_guest = 'guest_mode' in session
+    return render_template('index.html', tasks=tasks, is_guest=is_guest)
 
 @app.route('/add', methods=['GET', 'POST'])
+@login_required
 def add_task():
     if request.method == 'POST':
         title = request.form['title']
         description = request.form.get('description', '')
-        
-        due_date_str = request.form.get('due_date', '')
-        due_date = None
-        if due_date_str:
-            try:
-                # Store date as string in the database
-                due_date = due_date_str
-            except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
-                return redirect(url_for('add_task'))
-        
+        due_date = request.form.get('due_date', '')
         category = request.form.get('category', '')
         priority = request.form.get('priority', 'medium')
         
-        conn = get_db_connection()
-        conn.execute('INSERT INTO tasks (title, description, due_date, category, priority) VALUES (?, ?, ?, ?, ?)',
-                    (title, description, due_date, category, priority))
-        conn.commit()
-        conn.close()
+        user_id = get_current_user_id()
         
-        flash('Task added successfully!', 'success')
+        if user_id:
+            # 認証ユーザーの場合、データベースに保存
+            conn = get_db_connection()
+            conn.execute('INSERT INTO tasks (title, description, due_date, category, priority, user_id) VALUES (?, ?, ?, ?, ?, ?)',
+                        (title, description, due_date, category, priority, user_id))
+            conn.commit()
+            conn.close()
+        else:
+            # ゲストモードの場合、セッションに保存
+            if 'guest_tasks' not in session:
+                session['guest_tasks'] = []
+            
+            new_task = {
+                'id': len(session['guest_tasks']) + 1,
+                'title': title,
+                'description': description,
+                'due_date': due_date,
+                'category': category,
+                'priority': priority,
+                'completed': 0,
+                'created_at': datetime.now().isoformat()
+            }
+            
+            guest_tasks = session['guest_tasks']
+            guest_tasks.append(new_task)
+            session['guest_tasks'] = guest_tasks
+        
+        flash('タスクを追加しました！', 'success')
         return redirect(url_for('index'))
     
     return render_template('add_task.html')
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
 def edit_task(id):
-    conn = get_db_connection()
-    task = conn.execute('SELECT * FROM tasks WHERE id = ?', (id,)).fetchone()
+    user_id = get_current_user_id()
     
-    if task is None:
+    if user_id:
+        # 認証ユーザーの場合
+        conn = get_db_connection()
+        task = conn.execute('SELECT * FROM tasks WHERE id = ? AND user_id = ?', (id, user_id)).fetchone()
+        
+        if task is None:
+            conn.close()
+            flash('タスクが見つかりません！', 'error')
+            return redirect(url_for('index'))
+        
+        if request.method == 'POST':
+            title = request.form['title']
+            description = request.form.get('description', '')
+            due_date = request.form.get('due_date', '')
+            category = request.form.get('category', '')
+            priority = request.form.get('priority', 'medium')
+            
+            conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, category = ?, priority = ? WHERE id = ? AND user_id = ?',
+                        (title, description, due_date, category, priority, id, user_id))
+            conn.commit()
+            conn.close()
+            
+            flash('タスクを更新しました！', 'success')
+            return redirect(url_for('index'))
+        
         conn.close()
-        flash('Task not found!', 'error')
-        return redirect(url_for('index'))
+    else:
+        # ゲストモードの場合
+        guest_tasks = session.get('guest_tasks', [])
+        task = next((t for t in guest_tasks if t['id'] == id), None)
+        
+        if task is None:
+            flash('タスクが見つかりません！', 'error')
+            return redirect(url_for('index'))
+        
+        if request.method == 'POST':
+            title = request.form['title']
+            description = request.form.get('description', '')
+            due_date = request.form.get('due_date', '')
+            category = request.form.get('category', '')
+            priority = request.form.get('priority', 'medium')
+            
+            # ゲストタスクを更新
+            for i, t in enumerate(guest_tasks):
+                if t['id'] == id:
+                    guest_tasks[i].update({
+                        'title': title,
+                        'description': description,
+                        'due_date': due_date,
+                        'category': category,
+                        'priority': priority
+                    })
+                    break
+            
+            session['guest_tasks'] = guest_tasks
+            flash('タスクを更新しました！', 'success')
+            return redirect(url_for('index'))
     
-    if request.method == 'POST':
-        title = request.form['title']
-        description = request.form.get('description', '')
-        
-        due_date_str = request.form.get('due_date', '')
-        due_date = None
-        if due_date_str:
-            try:
-                # Store date as string
-                due_date = due_date_str
-            except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
-                return redirect(url_for('edit_task', id=id))
-        
-        category = request.form.get('category', '')
-        priority = request.form.get('priority', 'medium')
-        
-        conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, category = ?, priority = ? WHERE id = ?',
-                    (title, description, due_date, category, priority, id))
-        conn.commit()
-        conn.close()
-        
-        flash('Task updated successfully!', 'success')
-        return redirect(url_for('index'))
-    
-    conn.close()
     return render_template('edit_task.html', task=task)
 
 @app.route('/delete/<int:id>')
+@login_required
 def delete_task(id):
-    conn = get_db_connection()
-    conn.execute('DELETE FROM tasks WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
-    flash('Task deleted successfully!', 'success')
+    user_id = get_current_user_id()
+    
+    if user_id:
+        # 認証ユーザーの場合
+        conn = get_db_connection()
+        conn.execute('DELETE FROM tasks WHERE id = ? AND user_id = ?', (id, user_id))
+        conn.commit()
+        conn.close()
+    else:
+        # ゲストモードの場合
+        guest_tasks = session.get('guest_tasks', [])
+        session['guest_tasks'] = [t for t in guest_tasks if t['id'] != id]
+    
+    flash('タスクを削除しました！', 'success')
     return redirect(url_for('index'))
 
 @app.route('/complete/<int:id>')
+@login_required
 def complete_task(id):
-    conn = get_db_connection()
-    task = conn.execute('SELECT completed FROM tasks WHERE id = ?', (id,)).fetchone()
+    user_id = get_current_user_id()
     
-    if task is None:
+    if user_id:
+        # 認証ユーザーの場合
+        conn = get_db_connection()
+        task = conn.execute('SELECT completed FROM tasks WHERE id = ? AND user_id = ?', (id, user_id)).fetchone()
+        
+        if task is None:
+            conn.close()
+            flash('タスクが見つかりません！', 'error')
+            return redirect(url_for('index'))
+        
+        new_status = 0 if task['completed'] else 1
+        conn.execute('UPDATE tasks SET completed = ? WHERE id = ? AND user_id = ?', (new_status, id, user_id))
+        conn.commit()
         conn.close()
-        flash('Task not found!', 'error')
-        return redirect(url_for('index'))
+    else:
+        # ゲストモードの場合
+        guest_tasks = session.get('guest_tasks', [])
+        for i, task in enumerate(guest_tasks):
+            if task['id'] == id:
+                guest_tasks[i]['completed'] = 0 if task['completed'] else 1
+                break
+        session['guest_tasks'] = guest_tasks
     
-    # Toggle completed status (0 -> 1, 1 -> 0)
-    new_status = 0 if task['completed'] else 1
-    conn.execute('UPDATE tasks SET completed = ? WHERE id = ?', (new_status, id))
-    conn.commit()
-    conn.close()
     return redirect(url_for('index'))
 
 @app.route('/analytics')
+@login_required
 def analytics():
     """統計・分析ページ"""
-    conn = get_db_connection()
-    tasks = conn.execute('SELECT * FROM tasks').fetchall()
-    conn.close()
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+        conn.close()
+    else:
+        tasks = session.get('guest_tasks', [])
     
     # タスク統計の計算
     total_tasks = len(tasks)
@@ -174,12 +361,14 @@ def analytics():
         if task['completed']:
             priority_stats[priority]['completed'] += 1
     
+    is_guest = 'guest_mode' in session
     return render_template('analytics.html', 
                          total_tasks=total_tasks,
                          completed_tasks=completed_tasks,
                          incomplete_tasks=incomplete_tasks,
                          category_stats=dict(category_stats),
-                         priority_stats=dict(priority_stats))
+                         priority_stats=dict(priority_stats),
+                         is_guest=is_guest)
 
 @app.route('/chart/<chart_type>')
 def generate_chart(chart_type):

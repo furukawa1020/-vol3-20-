@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>タスク管理アプリ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .hero-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 100px 0;
+        }
+        .feature-card {
+            transition: transform 0.3s;
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        .cta-section {
+            background: #f8f9fa;
+            padding: 80px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-6">
+                    <h1 class="display-4 fw-bold mb-4">
+                        <i class="bi bi-check2-square"></i> タスク管理アプリ
+                    </h1>
+                    <p class="lead mb-4">
+                        効率的にタスクを管理し、生産性を向上させましょう。
+                        アカウント登録してデータを永続保存するか、ゲストモードでお試しいただけます。
+                    </p>
+                    <div class="d-flex gap-3">
+                        <a href="{{ url_for('register') }}" class="btn btn-light btn-lg">
+                            <i class="bi bi-person-plus"></i> アカウント作成
+                        </a>
+                        <a href="{{ url_for('login') }}" class="btn btn-outline-light btn-lg">
+                            <i class="bi bi-box-arrow-in-right"></i> ログイン
+                        </a>
+                        <a href="{{ url_for('guest_mode') }}" class="btn btn-secondary btn-lg">
+                            <i class="bi bi-person-dash"></i> ゲストで試す
+                        </a>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="text-center">
+                        <i class="bi bi-kanban" style="font-size: 15rem; opacity: 0.3;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="py-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-12 text-center mb-5">
+                    <h2 class="fw-bold">主な機能</h2>
+                    <p class="text-muted">タスク管理に必要な機能をすべて搭載</p>
+                </div>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card feature-card h-100 text-center p-4">
+                        <div class="card-body">
+                            <i class="bi bi-list-task text-primary" style="font-size: 3rem;"></i>
+                            <h5 class="card-title mt-3">タスク管理</h5>
+                            <p class="card-text">タスクの作成、編集、削除、完了マークなど基本機能を完備</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card feature-card h-100 text-center p-4">
+                        <div class="card-body">
+                            <i class="bi bi-graph-up text-success" style="font-size: 3rem;"></i>
+                            <h5 class="card-title mt-3">分析・統計</h5>
+                            <p class="card-text">カテゴリ別、優先度別の分析グラフで進捗を可視化</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card feature-card h-100 text-center p-4">
+                        <div class="card-body">
+                            <i class="bi bi-folder text-warning" style="font-size: 3rem;"></i>
+                            <h5 class="card-title mt-3">カテゴリ分け</h5>
+                            <p class="card-text">仕事、個人、勉強など用途に合わせてカテゴリ分類</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Mode Comparison -->
+    <section class="cta-section">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-12 text-center mb-5">
+                    <h2 class="fw-bold">利用方法を選択</h2>
+                </div>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-primary text-white text-center">
+                            <h4><i class="bi bi-person-check"></i> ユーザー登録</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li><i class="bi bi-check-circle text-success"></i> データの永続保存</li>
+                                <li><i class="bi bi-check-circle text-success"></i> 複数デバイスでアクセス</li>
+                                <li><i class="bi bi-check-circle text-success"></i> 長期的なタスク管理</li>
+                                <li><i class="bi bi-check-circle text-success"></i> 統計データの蓄積</li>
+                            </ul>
+                            <div class="d-grid gap-2">
+                                <a href="{{ url_for('register') }}" class="btn btn-primary">
+                                    <i class="bi bi-person-plus"></i> アカウント作成
+                                </a>
+                                <a href="{{ url_for('login') }}" class="btn btn-outline-primary">
+                                    <i class="bi bi-box-arrow-in-right"></i> ログイン
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-secondary text-white text-center">
+                            <h4><i class="bi bi-person-dash"></i> ゲストモード</h4>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li><i class="bi bi-check-circle text-success"></i> すぐに利用開始</li>
+                                <li><i class="bi bi-check-circle text-success"></i> アカウント登録不要</li>
+                                <li><i class="bi bi-info-circle text-warning"></i> セッション中のみデータ保持</li>
+                                <li><i class="bi bi-info-circle text-warning"></i> お試し利用に最適</li>
+                            </ul>
+                            <div class="d-grid">
+                                <a href="{{ url_for('guest_mode') }}" class="btn btn-secondary">
+                                    <i class="bi bi-person-dash"></i> ゲストで始める
+                                </a>
+                            </div>
+                            <small class="text-muted mt-2 d-block">
+                                ※ブラウザを閉じるとデータは削除されます
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
