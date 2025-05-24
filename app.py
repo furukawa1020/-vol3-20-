@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import os
 import json
 from collections import defaultdict
+
+# matplotlib設定をインポート前に行う
+import matplotlib
+matplotlib.use('Agg')  # GUI不要のバックエンドを設定
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import io
@@ -214,26 +218,9 @@ def generate_chart(chart_type):
 def setup_japanese_font():
     """日本語フォントの設定"""
     try:
-        # Linux/Unix系（Renderの環境）
-        japanese_fonts = [
-            'Noto Sans CJK JP',
-            'DejaVu Sans'
-        ]
-        
-        for font_name in japanese_fonts:
-            try:
-                font_prop = fm.FontProperties(family=font_name)
-                # テスト描画でフォントが利用可能か確認
-                plt.figure(figsize=(1, 1))
-                plt.text(0.5, 0.5, 'テスト', fontproperties=font_prop)
-                plt.close()
-                return font_prop
-            except:
-                continue
-                
-        # デフォルトフォントを使用
+        # Renderの環境ではフォントが制限されているため、シンプルに
+        plt.rcParams['font.family'] = 'DejaVu Sans'
         return None
-            
     except Exception as e:
         print(f"フォント設定でエラーが発生しました: {e}")
         return None
@@ -253,10 +240,7 @@ def generate_category_pie_chart(tasks, font_prop):
     colors = plt.cm.Set3(range(len(labels)))
     
     plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-    if font_prop:
-        plt.title('Category Distribution', fontproperties=font_prop, fontsize=16)
-    else:
-        plt.title('Category Distribution', fontsize=16)
+    plt.title('Category Distribution', fontsize=16)
     
     return create_chart_response()
 
@@ -275,14 +259,9 @@ def generate_priority_bar_chart(tasks, font_prop):
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
     
     bars = plt.bar(priorities, counts, color=colors)
-    if font_prop:
-        plt.title('Tasks by Priority', fontproperties=font_prop, fontsize=16)
-        plt.xlabel('Priority', fontproperties=font_prop)
-        plt.ylabel('Number of Tasks', fontproperties=font_prop)
-    else:
-        plt.title('Tasks by Priority', fontsize=16)
-        plt.xlabel('Priority')
-        plt.ylabel('Number of Tasks')
+    plt.title('Tasks by Priority', fontsize=16)
+    plt.xlabel('Priority')
+    plt.ylabel('Number of Tasks')
     
     # バーに値を表示
     for bar, count in zip(bars, counts):
@@ -306,10 +285,7 @@ def generate_completion_status_chart(tasks, font_prop):
     colors = ['#4CAF50', '#FF9800']
     
     plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-    if font_prop:
-        plt.title('Task Completion Status', fontproperties=font_prop, fontsize=16)
-    else:
-        plt.title('Task Completion Status', fontsize=16)
+    plt.title('Task Completion Status', fontsize=16)
     
     return create_chart_response()
 
@@ -336,15 +312,9 @@ def generate_category_stacked_chart(tasks, font_prop):
     p1 = plt.bar(categories, completed_counts, width, label='Completed', color='#4CAF50')
     p2 = plt.bar(categories, incomplete_counts, width, bottom=completed_counts, label='Incomplete', color='#FF9800')
     
-    if font_prop:
-        plt.title('Completion Status by Category', fontproperties=font_prop, fontsize=16)
-        plt.xlabel('Category', fontproperties=font_prop)
-        plt.ylabel('Number of Tasks', fontproperties=font_prop)
-    else:
-        plt.title('Completion Status by Category', fontsize=16)
-        plt.xlabel('Category')
-        plt.ylabel('Number of Tasks')
-    
+    plt.title('Completion Status by Category', fontsize=16)
+    plt.xlabel('Category')
+    plt.ylabel('Number of Tasks')
     plt.legend()
     plt.xticks(rotation=45)
     
