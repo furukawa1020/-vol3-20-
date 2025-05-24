@@ -62,10 +62,10 @@
                                 <h5 class="card-title mb-0">新しいカテゴリを追加</h5>
                             </div>
                             <div class="card-body">
-                                <form method="POST" action="{{ url_for('categories') }}">
+                                <form method="POST" action="{{ url_for('categories') }}" id="categoryForm">
                                     <div class="mb-3">
                                         <label for="name" class="form-label">カテゴリ名</label>
-                                        <input type="text" id="name" name="name" class="form-control" placeholder="例: 仕事" required>
+                                        <input type="text" id="name" name="name" class="form-control" placeholder="例: 仕事" required maxlength="50">
                                     </div>
 
                                     <div class="mb-3">
@@ -83,20 +83,31 @@
                                             <div class="color-circle" data-color="#FF80CC" style="background-color: #FF80CC;"></div>
                                             <div class="color-circle" data-color="#795548" style="background-color: #795548;"></div>
                                             <div class="color-circle" data-color="#7DA0B2" style="background-color: #7DA0B2;"></div>
+                                            <!-- 追加の色 -->
+                                            <div class="color-circle" data-color="#E91E63" style="background-color: #E91E63;"></div>
+                                            <div class="color-circle" data-color="#9C27B0" style="background-color: #9C27B0;"></div>
+                                            <div class="color-circle" data-color="#673AB7" style="background-color: #673AB7;"></div>
+                                            <div class="color-circle" data-color="#3F51B5" style="background-color: #3F51B5;"></div>
+                                            <div class="color-circle" data-color="#2196F3" style="background-color: #2196F3;"></div>
+                                            <div class="color-circle" data-color="#00BCD4" style="background-color: #00BCD4;"></div>
+                                            <div class="color-circle" data-color="#009688" style="background-color: #009688;"></div>
+                                            <div class="color-circle" data-color="#4CAF50" style="background-color: #4CAF50;"></div>
+                                            <div class="color-circle" data-color="#8BC34A" style="background-color: #8BC34A;"></div>
+                                            <div class="color-circle" data-color="#CDDC39" style="background-color: #CDDC39;"></div>
                                         </div>
                                     </div>
 
                                     <div class="mb-3">
                                         <label class="form-label">プレビュー:</label>
                                         <div>
-                                            <span id="category-preview" class="badge" style="background-color: #F82A1B; font-size: 0.9rem; padding: 0.5rem 1rem;">
+                                            <span id="category-preview" class="badge" style="background-color: #F82A1B; font-size: 0.9rem; padding: 0.5rem 1rem; color: white;">
                                                 サンプル
                                             </span>
                                         </div>
                                     </div>
 
                                     <div class="d-grid gap-2">
-                                        <button type="submit" class="btn btn-primary">
+                                        <button type="submit" class="btn btn-primary" id="submitBtn">
                                             <i class="bi bi-plus me-2"></i>カテゴリを追加
                                         </button>
                                     </div>
@@ -190,10 +201,16 @@
             const selectedInput = document.getElementById('selected-color');
             const nameInput = document.getElementById('name');
             const preview = document.getElementById('category-preview');
+            const form = document.getElementById('categoryForm');
+            const submitBtn = document.getElementById('submitBtn');
+
+            console.log('Categories page loaded'); // デバッグ用
 
             // 色選択の処理
             circles.forEach(function(circle) {
                 circle.addEventListener('click', function() {
+                    console.log('Color clicked:', circle.getAttribute('data-color')); // デバッグ用
+                    
                     // 全ての選択状態をリセット
                     circles.forEach(function(c) {
                         c.classList.remove('selected');
@@ -224,18 +241,38 @@
                     
                     preview.textContent = name || 'サンプル';
                     preview.style.backgroundColor = color;
+                    
+                    // 色に応じてテキスト色を自動調整
+                    const rgb = hexToRgb(color);
+                    if (rgb) {
+                        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+                        preview.style.color = brightness > 128 ? '#000000' : '#ffffff';
+                    }
                 }
+            }
+
+            // Hex色をRGBに変換
+            function hexToRgb(hex) {
+                const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? {
+                    r: parseInt(result[1], 16),
+                    g: parseInt(result[2], 16),
+                    b: parseInt(result[3], 16)
+                } : null;
             }
 
             // 初期プレビューの設定
             updatePreview();
 
             // フォーム送信前のバリデーション
-            const form = document.querySelector('form');
             if (form) {
                 form.addEventListener('submit', function(e) {
+                    console.log('Form submission started'); // デバッグ用
+                    
                     const name = nameInput.value.trim();
                     const color = selectedInput.value;
+
+                    console.log('Form data:', { name: name, color: color }); // デバッグ用
 
                     if (!name) {
                         e.preventDefault();
@@ -249,6 +286,12 @@
                         alert('色を選択してください。');
                         return false;
                     }
+
+                    // 送信ボタンを無効化（二重送信防止）
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>追加中...';
+                    
+                    console.log('Form validation passed, submitting...'); // デバッグ用
                 });
             }
 

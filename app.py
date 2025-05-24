@@ -51,10 +51,10 @@ def init_db():
     conn.execute('''
     CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        color TEXT NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#007bff',
         user_id INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )
     ''')
@@ -217,43 +217,77 @@ def index():
     return render_template('index.html', tasks=tasks, is_guest=is_guest)
 
 @app.route('/categories', methods=['GET', 'POST'])
-@login_required
 def categories():
-    """カテゴリ管理ページ"""
-    user_id = get_current_user_id()
-    
-    if request.method == 'POST' and user_id:  # ゲストモードでは作成不可
-        name = request.form['name']
-        color = request.form['color']
+    if request.method == 'POST':
+        name = request.form.get('name')
+        color = request.form.get('color')
         
-        conn = get_db_connection()
+        if not name or not color:
+            flash('カテゴリ名と色を選択してください。', 'error')
+            return redirect(url_for('categories'))
+        
         try:
-            # ユーザー固有のカテゴリとして作成
-            conn.execute('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', 
-                        (name, color, user_id))
+            conn = get_db_connection()
+            
+            # 重複チェック
+            existing = conn.execute('SELECT id FROM categories WHERE name = ?', (name,)).fetchone()
+            if existing:
+                flash('そのカテゴリは既に存在します。', 'error')
+                conn.close()
+                return redirect(url_for('categories'))
+            
+            # カテゴリを追加
+            user_id = session.get('user_id') if not session.get('is_guest') else None
+            conn.execute(
+                'INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)',
+                (name, color, user_id)
+            )
             conn.commit()
-            flash('カテゴリを追加しました！', 'success')
-        except sqlite3.IntegrityError:
-            flash('同じ名前のカテゴリが既に存在します。', 'error')
-        conn.close()
+            conn.close()
+            
+            flash(f'カテゴリ「{name}」を追加しました。', 'success')
+            
+        except Exception as e:
+            flash(f'エラーが発生しました: {str(e)}', 'error')
+        
         return redirect(url_for('categories'))
     
-    # カテゴリ一覧を取得
-    conn = get_db_connection()
-    if user_id:
-        # 認証ユーザー：グローバルカテゴリ + ユーザー固有カテゴリ
-        categories = conn.execute('''
-            SELECT * FROM categories 
-            WHERE user_id IS NULL OR user_id = ? 
-            ORDER BY user_id IS NULL DESC, name ASC
-        ''', (user_id,)).fetchall()
-    else:
-        # ゲストモード：グローバルカテゴリのみ
-        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name ASC').fetchall()
-    conn.close()
+    # GET request - カテゴリ一覧を表示
+    try:
+        conn = get_db_connection()
+        
+        # カテゴリ一覧を取得
+        if session.get('is_guest'):
+            # ゲストは標準カテゴリのみ
+            categories = conn.execute(
+                'SELECT * FROM categories WHERE user_id IS NULL ORDER BY name'
+            ).fetchall()
+        else:
+            # ログインユーザーは自分のカテゴリ + 標準カテゴリ
+            user_id = session.get('user_id')
+            categories = conn.execute(
+                'SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY name',
+                (user_id,)
+            ).fetchall()
+        
+        # カテゴリ別タスク数を取得
+        categorized_tasks = {}
+        for category in categories:
+            tasks = conn.execute(
+                'SELECT * FROM tasks WHERE category = ?',
+                (category['name'],)
+            ).fetchall()
+            categorized_tasks[category['name']] = tasks
+        
+        conn.close()
+        
+        return render_template('categories.html', 
+                             categories=categories, 
+                             categorized_tasks=categorized_tasks)
     
-    is_guest = 'guest_mode' in session
-    return render_template('categories.html', categories=categories, colors=DEFAULT_COLORS, is_guest=is_guest)
+    except Exception as e:
+        flash(f'データの取得に失敗しました: {str(e)}', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
@@ -786,3 +820,44 @@ def delete_category(category_id):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+import sqlite3
+import os
+
+# データベース接続
+conn = sqlite3.connect('tasks.db')
+cursor = conn.cursor()
+
+# categoriesテーブルを作成（存在しない場合）
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#007bff',
+        user_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+''')
+
+# デフォルトカテゴリを挿入（重複を避ける）
+default_categories = [
+    ('仕事', '#F82A1B'),
+    ('個人', '#53EB38'),
+    ('勉強', '#03A9F4'),
+    ('健康', '#FF9800'),
+    ('趣味', '#902DEE')
+]
+
+for name, color in default_categories:
+    try:
+        cursor.execute(
+            'INSERT OR IGNORE INTO categories (name, color, user_id) VALUES (?, ?, NULL)',
+            (name, color)
+        )
+    except sqlite3.IntegrityError:
+        pass  # 既に存在する場合は無視
+
+conn.commit()
+conn.close()
+print("categoriesテーブルを作成し、デフォルトカテゴリを追加しました。")
