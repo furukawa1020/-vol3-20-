@@ -23,6 +23,9 @@
                 <a class="nav-link" href="{{ url_for('analytics') }}">
                     <i class="bi bi-bar-chart"></i> 分析
                 </a>
+                <a class="nav-link" href="{{ url_for('categories') }}">
+                    <i class="bi bi-tags"></i> カテゴリ
+                </a>
             </div>
         </div>
     </nav>
@@ -55,56 +58,73 @@
                             </div>
 
                             <div class="mb-3">
-                                <label for="description" class="form-label">説明</label>
+                                <label for="description" class="form-label">詳細</label>
                                 <textarea class="form-control" id="description" name="description" rows="3"></textarea>
                             </div>
 
                             <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="due_date" class="form-label">期限日</label>
-                                    <input type="date" class="form-control" id="due_date" name="due_date">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="due_date" class="form-label">期限日</label>
+                                        <input type="date" class="form-control" id="due_date" name="due_date">
+                                    </div>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label for="due_time" class="form-label">
-                                        期限時刻 
-                                        <small class="text-muted">(オプション)</small>
-                                    </label>
-                                    <input type="time" class="form-control" id="due_time" name="due_time">
-                                    <div class="form-text">例: 14:30 (午後2時30分)</div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="due_time" class="form-label">期限時刻</label>
+                                        <input type="time" class="form-control" id="due_time" name="due_time">
+                                        <div class="form-text">例: 14:30 (時刻を指定しない場合は空欄)</div>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <div class="alert alert-info">
-                                <small>
-                                    <i class="bi bi-info-circle"></i> 
-                                    <strong>時刻指定のヒント:</strong><br>
-                                    • 期限日のみ: その日中に完了すべきタスク<br>
-                                    • 期限日+時刻: 特定の時間までに完了すべきタスク<br>
-                                    • 会議やアポイントメントには時刻指定がおすすめです
-                                </small>
                             </div>
 
                             <div class="mb-3">
-                                <label for="priority" class="form-label">優先度</label>
-                                <select class="form-select" id="priority" name="priority">
-                                    <option value="low">低</option>
-                                    <option value="medium" selected>中</option>
-                                    <option value="high">高</option>
+                                <label for="category_id" class="form-label">カテゴリ</label>
+                                <select class="form-select" id="category_id" name="category_id" onchange="checkOtherCategory(this)">
+                                    <option value="">選択してください</option>
+                                    {% for category in categories %}
+                                        <option value="{{ category.id }}">{{category.name }}</option>
+                                    {% endfor %}
+                                    <option value="other">+ その他のカテゴリを追加...</option>
                                 </select>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="category" class="form-label">カテゴリ</label>
-                                <input type="text" class="form-control" id="category" name="category" 
-                                       placeholder="例: 仕事, 個人, 勉強">
+                            <!-- 新規カテゴリ追加フィールド（隠し状態） -->
+                            <div id="new-category-field" class="mb-3" style="display: none;">
+                                <label for="new_category" class="form-label">新しいカテゴリ名</label>
+                                <input type="text" class="form-control" id="new_category" name="new_category" placeholder="カテゴリ名を入力">
                             </div>
 
-                            <div class="d-flex justify-content-between">
-                                <a href="{{ url_for('index') }}" class="btn btn-secondary">
-                                    <i class="bi bi-arrow-left"></i> 戻る
+                            <div class="mb-3">
+                                <label class="form-label">優先度</label>
+                                <div class="d-flex">
+                                    <div class="form-check me-3">
+                                        <input class="form-check-input" type="radio" name="priority" id="priority-high" value="high">
+                                        <label class="form-check-label text-danger" for="priority-high">
+                                            <i class="bi bi-exclamation-triangle-fill"></i> 高
+                                        </label>
+                                    </div>
+                                    <div class="form-check me-3">
+                                        <input class="form-check-input" type="radio" name="priority" id="priority-medium" value="medium" checked>
+                                        <label class="form-check-label text-warning" for="priority-medium">
+                                            <i class="bi bi-dash-circle-fill"></i> 中
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="priority" id="priority-low" value="low">
+                                        <label class="form-check-label text-success" for="priority-low">
+                                            <i class="bi bi-check-circle-fill"></i> 低
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                                    <i class="bi bi-arrow-left"></i> キャンセル
                                 </a>
                                 <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check"></i> タスクを作成
+                                    <i class="bi bi-check-lg"></i> 保存
                                 </button>
                             </div>
                         </form>
@@ -115,5 +135,56 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // カテゴリ選択の処理
+        function checkOtherCategory(select) {
+            const newCategoryField = document.getElementById('new-category-field');
+            const newCategoryInput = document.getElementById('new_category');
+            
+            if (select.value === 'other') {
+                newCategoryField.style.display = 'block';
+                newCategoryInput.required = true;
+                newCategoryInput.focus();
+            } else {
+                newCategoryField.style.display = 'none';
+                newCategoryInput.required = false;
+                newCategoryInput.value = '';
+            }
+        }
+
+        // 現在の日付をデフォルトに設定（オプション）
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('due_date').value = today;
+        });
+
+        // フォーム送信前のバリデーション
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const title = document.getElementById('title').value.trim();
+            const dueDate = document.getElementById('due_date').value;
+            const dueTime = document.getElementById('due_time').value;
+            
+            if (!title) {
+                e.preventDefault();
+                alert('タスクタイトルを入力してください。');
+                document.getElementById('title').focus();
+                return;
+            }
+
+            // 日付が設定されていて、時刻が現在時刻より前の場合の警告
+            if (dueDate && dueTime) {
+                const now = new Date();
+                const dueDateTime = new Date(dueDate + 'T' + dueTime);
+                
+                if (dueDateTime < now) {
+                    const confirmResult = confirm('設定した期限が過去の時刻です。このまま保存しますか？');
+                    if (!confirmResult) {
+                        e.preventDefault();
+                        return;
+                    }
+                }
+            }
+        });
+    </script>
 </body>
 </html>

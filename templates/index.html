@@ -48,6 +48,19 @@
                 display: none;
             }
         }
+        /* ツールチップ用 */
+        #clock-tooltip {
+            position: absolute;
+            display: none;
+            background: rgba(0,0,0,0.85);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 28px;
+            pointer-events: none;
+            z-index: 1000;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -174,9 +187,10 @@
             <div class="divider-vertical d-none d-lg-block"></div>
             <!-- 右カラム：時計 -->
             <div class="col-lg-3 col-md-4 col-12">
-                <div class="my-3 d-flex flex-column align-items-center">
+                <div class="my-3 d-flex flex-column align-items-center position-relative">
                     <canvas id="analogClock" width="300" height="300"
                         style="border-radius: 16px; box-shadow: 0 2px 8px #aaa;"></canvas>
+                    <div id="clock-tooltip"></div>
                 </div>
             </div>
         </div>
@@ -191,6 +205,9 @@
 
         // PythonからtasksをJavaScriptに渡す
         const tasks = {{ tasks|tojson }};
+
+        // タスクマーカーの座標を保持
+        let markerPositions = [];
 
         // アナログ時計描画＋12時間以内タスクを優先度で図形・色分けしてプロット
         function drawAnalogClock() {
@@ -258,6 +275,9 @@
             ctx.strokeStyle = "#000";
             ctx.stroke();
 
+            // マーカー座標リストを初期化
+            markerPositions = [];
+
             // 12時間以内のタスクを優先度で図形・色分けしてプロット
             if (typeof tasks !== "undefined" && Array.isArray(tasks)) {
                 const nowTime = now.getTime();
@@ -275,6 +295,7 @@
                         const x = cx + radius * Math.cos(angle);
                         const y = cy + radius * Math.sin(angle);
 
+                        let markerRadius = 8;
                         if (task.priority === "high") {
                             drawStar(ctx, x, y, 8, 5, 0.48, "#dc3545"); // 赤い星
                         } else if (task.priority === "medium") {
@@ -288,6 +309,8 @@
                             ctx.lineWidth = 2;
                             ctx.stroke();
                         }
+                        // マーカーの座標と半径、タスク名を記録
+                        markerPositions.push({x, y, r: markerRadius, title: task.title});
                     }
                 });
             }
@@ -331,119 +354,38 @@
 
         window.addEventListener('DOMContentLoaded', drawAnalogClock);
         setInterval(drawAnalogClock, 60*1000);
-    </script>
-    <!-- <script>
-        function completeTask(element) {
-            const taskId = element.getAttribute('data-task-id');
-            window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
-        }
 
-        // PythonからtasksをJavaScriptに渡す
-        const tasks = {{ tasks|tojson }};
-
-        // アナログ時計描画＋12時間以内タスクを優先度で点の大きさ変えてプロット
-        function drawAnalogClock() {
+        // ツールチップ表示処理
+        window.addEventListener('DOMContentLoaded', function() {
             const canvas = document.getElementById('analogClock');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const size = 280, padding = 10;
-            const cx = size/2 + padding, cy = size/2 + padding;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 外枠
-            ctx.beginPath();
-            ctx.arc(cx, cy, size/2, 0, 2*Math.PI);
-            ctx.lineWidth = 6;
-            ctx.strokeStyle = "#00BFFF";
-            ctx.stroke();
-
-            // 盤面
-            ctx.beginPath();
-            ctx.arc(cx, cy, size/2-3, 0, 2*Math.PI);
-            ctx.fillStyle = "#fff";
-            ctx.fill();
-
-            // クロスポイント
-            ctx.beginPath();
-            ctx.arc(cx, cy, 3, 0, 2*Math.PI);
-            ctx.fillStyle = "#000";
-            ctx.fill();
-
-            // 12, 3, 6, 9 の数字
-            ctx.font = "20px Oranienbaum,serif";
-            ctx.fillStyle = "#000";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("12", cx, cy - (size/2 - 28));
-            ctx.fillText("3", cx + (size/2 - 28), cy);
-            ctx.fillText("6", cx, cy + (size/2 - 28));
-            ctx.fillText("9", cx - (size/2 - 28), cy);
-
-            // 現在時刻（分は5分単位で丸め）
-            const now = new Date();
-            let hour = now.getHours();
-            let minute = now.getMinutes();
-            let roundedMinute = Math.round(minute / 5) * 5;
-            if (roundedMinute === 60) {
-                roundedMinute = 0;
-                hour = (hour + 1) % 24;
-            }
-
-            // 分針
-            const minAngle = (roundedMinute/60)*2*Math.PI - Math.PI/2;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + (size*0.42)*Math.cos(minAngle), cy + (size*0.42)*Math.sin(minAngle));
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#000";
-            ctx.stroke();
-
-            // 時針
-            const hourAngle = ((hour%12)/12 + roundedMinute/720)*2*Math.PI - Math.PI/2;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + (size*0.30)*Math.cos(hourAngle), cy + (size*0.30)*Math.sin(hourAngle));
-            ctx.lineWidth = 4;
-            ctx.strokeStyle = "#000";
-            ctx.stroke();
-
-            // 12時間以内のタスクを優先度で点の大きさ変えて赤丸でプロット（タイトル表示なし）
-            if (typeof tasks !== "undefined" && Array.isArray(tasks)) {
-                const nowTime = now.getTime();
-                const ms12h = 12 * 60 * 60 * 1000;
-                const radius = size/2 - 70; // マーカー半径
-
-                tasks.forEach(task => {
-                    if (!task.due_date || !task.due_time) return;
-                    const dueDateTime = new Date(task.due_date + "T" + task.due_time);
-                    const diff = dueDateTime.getTime() - nowTime;
-                    if (diff >= 0 && diff <= ms12h) {
-                        let hour = dueDateTime.getHours();
-                        let minute = dueDateTime.getMinutes();
-                        const angle = ((hour % 12) / 12 + minute / 720) * 2 * Math.PI - Math.PI / 2;
-
-                        // 優先度による点の大きさ
-                        let dotRadius = 7; // mediumデフォルト
-                        if (task.priority === "high") {
-                            dotRadius = 11;
-                        } else if (task.priority === "low") {
-                            dotRadius = 5;
-                        }
-
-                        ctx.beginPath();
-                        ctx.arc(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle), dotRadius, 0, 2 * Math.PI);
-                        ctx.fillStyle = "#dc3545";
-                        ctx.fill();
-                        ctx.strokeStyle = "#fff";
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
+            const tooltip = document.getElementById('clock-tooltip');
+            if (!canvas || !tooltip) return;
+            canvas.addEventListener('mousemove', function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                let found = false;
+                for (const marker of markerPositions) {
+                    const dx = mx - marker.x;
+                    const dy = my - marker.y;
+                    if (dx*dx + dy*dy < marker.r*marker.r + 10) { // 少し余裕を持たせる
+                        tooltip.style.display = 'block';
+                        tooltip.textContent = marker.title;
+                        // x-50, y+10で表示
+                        tooltip.style.left = (mx - 50) + 'px';
+                        tooltip.style.top = (my + 10) + 'px';
+                        found = true;
+                        break;
                     }
-                });
-            }
-        }
-
-        window.addEventListener('DOMContentLoaded', drawAnalogClock);
-        setInterval(drawAnalogClock, 60*1000);
-    </script> -->
+                }
+                if (!found) {
+                    tooltip.style.display = 'none';
+                }
+            });
+            canvas.addEventListener('mouseleave', function() {
+                tooltip.style.display = 'none';
+            });
+        });
+    </script>
 </body>
 </html>
