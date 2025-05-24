@@ -119,6 +119,10 @@ def delete_task(id):
     flash('Task deleted successfully!', 'success')
     return redirect(url_for('index'))
 
+@app.route('/about')
+def about():
+    return render_template('about.html')
+    
 @app.route('/complete/<int:id>')
 def complete_task(id):
     conn = get_db_connection()
