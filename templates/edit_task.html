@@ -66,15 +66,24 @@
                                     <input type="date" class="form-control" id="due_date" name="due_date" 
                                            value="{{ task['due_date'] or '' }}">
                                 </div>
-
                                 <div class="col-md-6 mb-3">
-                                    <label for="priority" class="form-label">優先度</label>
-                                    <select class="form-select" id="priority" name="priority">
-                                        <option value="low" {% if task['priority'] == 'low' %}selected{% endif %}>低</option>
-                                        <option value="medium" {% if task['priority'] == 'medium' %}selected{% endif %}>中</option>
-                                        <option value="high" {% if task['priority'] == 'high' %}selected{% endif %}>高</option>
-                                    </select>
+                                    <label for="due_time" class="form-label">
+                                        期限時刻 
+                                        <small class="text-muted">(オプション)</small>
+                                    </label>
+                                    <input type="time" class="form-control" id="due_time" name="due_time" 
+                                           value="{{ task['due_time'] or '' }}">
+                                    <div class="form-text">例: 14:30 (午後2時30分)</div>
                                 </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="priority" class="form-label">優先度</label>
+                                <select class="form-select" id="priority" name="priority">
+                                    <option value="low" {% if task['priority'] == 'low' %}selected{% endif %}>低</option>
+                                    <option value="medium" {% if task['priority'] == 'medium' %}selected{% endif %}>中</option>
+                                    <option value="high" {% if task['priority'] == 'high' %}selected{% endif %}>高</option>
+                                </select>
                             </div>
 
                             <div class="mb-3">
