@@ -757,5 +757,32 @@ def export_stats():
     
     return jsonify(stats_data)
 
+@app.route('/delete_category/<int:category_id>')
+@login_required
+def delete_category(category_id):
+    """カテゴリ削除処理"""
+    user_id = get_current_user_id()
+    
+    if not user_id:  # ゲストモードでは削除不可
+        flash('ゲストモードではカテゴリの削除はできません。', 'error')
+        return redirect(url_for('categories'))
+    
+    conn = get_db_connection()
+    try:
+        # ユーザー固有のカテゴリのみ削除可能
+        result = conn.execute('DELETE FROM categories WHERE id = ? AND user_id = ?', 
+                            (category_id, user_id))
+        if result.rowcount > 0:
+            conn.commit()
+            flash('カテゴリを削除しました。', 'success')
+        else:
+            flash('カテゴリが見つからないか、削除権限がありません。', 'error')
+    except Exception as e:
+        flash('カテゴリの削除中にエラーが発生しました。', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('categories'))
+
 if __name__ == '__main__':
     app.run(debug=True)
