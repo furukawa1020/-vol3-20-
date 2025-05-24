@@ -1,78 +1,157 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>タスク管理アプリ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .task-card {
+            transition: transform 0.2s;
+            border-radius: 10px;
+        }
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .completed-task {
+            opacity: 0.7;
+        }
+        .completed-task .card-title {
+            text-decoration: line-through;
+        }
+        .priority-high {
+            border-left: 4px solid #dc3545;
+        }
+        .priority-medium {
+            border-left: 4px solid #ffc107;
+        }
+        .priority-low {
+            border-left: 4px solid #28a745;
+        }
+        .category-badge {
+            background-color: #e9ecef;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-check2-square"></i> タスク管理
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link active" href="{{ url_for('index') }}">
+                    <i class="bi bi-house"></i> ホーム
+                </a>
+                <a class="nav-link" href="{{ url_for('add_task') }}">
+                    <i class="bi bi-plus-circle"></i> 新規タスク
+                </a>
+                <a class="nav-link" href="{{ url_for('analytics') }}">
+                    <i class="bi bi-bar-chart"></i> 分析
+                </a>
+            </div>
+        </div>
+    </nav>
 
-{% block content %}
-<div class="row mb-4">
-    <div class="col">
-        <h1>タスク一覧</h1>
-    </div>
-    <div class="col-auto">
-        <a href="{{ url_for('add_task') }}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> 新しいタスク
-        </a>
-    </div>
-</div>
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
 
-{% if tasks %}
-    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-        {% for task in tasks %}
+        <div class="row mb-4">
             <div class="col">
-                <div class="card task-card priority-{{ task['priority'] }} {% if task['completed'] %}completed-task{% endif %}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h5 class="card-title mb-0">{{ task['title'] }}</h5>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" 
-                                       {% if task['completed'] %}checked{% endif %} 
-                                       data-task-id="{{ task['id'] }}" 
-                                       onchange="completeTask(this)">
-                            </div>
-                        </div>
-                        
-                        {% if task['category'] %}
-                            <span class="category-badge mb-2">{{ task['category'] }}</span>
-                        {% endif %}
-                        
-                        {% if task['description'] %}
-                            <p class="card-text">{{ task['description'] }}</p>
-                        {% endif %}
-                        
-                        <div class="d-flex justify-content-between align-items-center mt-3">
-                            <div>
-                                {% if task['due_date'] %}
-                                    <small class="text-muted">
-                                        <i class="bi bi-calendar"></i> 
-                                        {{ task['due_date'] }}
-                                    </small>
+                <h1>
+                    <i class="bi bi-list-task"></i> タスク一覧
+                </h1>
+            </div>
+            <div class="col-auto">
+                <a href="{{ url_for('add_task') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg"></i> 新しいタスク
+                </a>
+            </div>
+        </div>
+
+        {% if tasks %}
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+                {% for task in tasks %}
+                    <div class="col">
+                        <div class="card task-card priority-{{ task['priority'] }} {% if task['completed'] %}completed-task{% endif %}">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h5 class="card-title mb-0">{{ task['title'] }}</h5>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" 
+                                               {% if task['completed'] %}checked{% endif %} 
+                                               data-task-id="{{ task['id'] }}" 
+                                               onchange="completeTask(this)">
+                                    </div>
+                                </div>
+                                
+                                {% if task['category'] %}
+                                    <span class="category-badge mb-2">{{ task['category'] }}</span>
                                 {% endif %}
-                            </div>
-                            <div>
-                                <a href="{{ url_for('edit_task', id=task['id']) }}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                <a href="{{ url_for('delete_task', id=task['id']) }}" class="btn btn-sm btn-outline-danger" 
-                                   onclick="return confirm('本当に削除しますか？');">
-                                    <i class="bi bi-trash"></i>
-                                </a>
+                                
+                                {% if task['description'] %}
+                                    <p class="card-text">{{ task['description'] }}</p>
+                                {% endif %}
+                                
+                                <div class="d-flex justify-content-between align-items-center mt-3">
+                                    <div>
+                                        {% if task['due_date'] %}
+                                            <small class="text-muted">
+                                                <i class="bi bi-calendar"></i> 
+                                                {{ task['due_date'] }}
+                                            </small>
+                                        {% endif %}
+                                    </div>
+                                    <div>
+                                        <a href="{{ url_for('edit_task', id=task['id']) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{{ url_for('delete_task', id=task['id']) }}" class="btn btn-sm btn-outline-danger" 
+                                           onclick="return confirm('本当に削除しますか？');">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                {% endfor %}
             </div>
-        {% endfor %}
+        {% else %}
+            <div class="alert alert-info">
+                <h4 class="alert-heading">
+                    <i class="bi bi-info-circle"></i> タスクがありません
+                </h4>
+                <p>新しいタスクを追加して始めましょう！</p>
+                <hr>
+                <a href="{{ url_for('add_task') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> 最初のタスクを作成
+                </a>
+            </div>
+        {% endif %}
     </div>
-{% else %}
-    <div class="alert alert-info">
-        <h4 class="alert-heading">タスクがありません</h4>
-        <p>新しいタスクを追加して始めましょう！</p>
-    </div>
-{% endif %}
-{% endblock %}
 
-{% block scripts %}
-<script>
-    function completeTask(element) {
-        const taskId = element.getAttribute('data-task-id');
-        window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
-    }
-</script>
-{% endblock %}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function completeTask(element) {
+            const taskId = element.getAttribute('data-task-id');
+            window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
+        }
+    </script>
+</body>
+</html>
