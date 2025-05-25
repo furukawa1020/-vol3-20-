@@ -69,7 +69,7 @@
                                 </div>
                                 {% endif %}
                                 
-                                <form method="POST" action="{{ url_for('categories') }}" id="categoryForm">
+                                <form method="POST" action="{{ url_for('add_category') }}" id="categoryForm">
                                     <div class="mb-3">
                                         <label for="name" class="form-label">カテゴリ名</label>
                                         <input type="text" id="name" name="name" class="form-control" placeholder="例: 仕事" required maxlength="50">
@@ -169,12 +169,8 @@
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" 
-                                                          onsubmit="return confirm('カテゴリ「{{ category.name }}」を削除しますか？\n※このカテゴリを使用しているタスクからカテゴリ情報が削除されます。')" 
-                                                          style="display: inline;">
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                                                            <i class="bi bi-trash"></i> 削除
-                                                        </button>
+                                                    <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" style="display: inline;">
+                                                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('本当に削除しますか？')">削除</button>
                                                     </form>
                                                 </td>
                                             </tr>
