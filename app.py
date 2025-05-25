@@ -85,6 +85,9 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_current_user_id():
+    return session.get('user_id') if 'guest_mode' not in session else None
+
 def init_db():
     try:
         # データベースディレクトリの作成
@@ -105,7 +108,7 @@ def init_db():
         )
         ''')
         
-        # カテゴリテーブル（新規追加）
+        # カテゴリテーブル
         conn.execute('''
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +120,7 @@ def init_db():
         )
         ''')
         
-        # タスクテーブル（category_idを追加）
+        # タスクテーブル
         conn.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,20 +139,18 @@ def init_db():
         )
         ''')
         
-        # 既存のテーブルに新しいカラムを追加（既存データ対応）
+        # 既存のテーブルに新しいカラムを追加
         try:
             conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                print(f"Warning: Could not add due_time column: {e}")
+        except sqlite3.OperationalError:
+            pass
         
         try:
             conn.execute('ALTER TABLE tasks ADD COLUMN category_id INTEGER')
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                print(f"Warning: Could not add category_id column: {e}")
+        except sqlite3.OperationalError:
+            pass
         
-        # デフォルトカテゴリの作成（グローバル）
+        # デフォルトカテゴリの作成
         try:
             existing_global_categories = conn.execute('SELECT COUNT(*) FROM categories WHERE user_id IS NULL').fetchone()[0]
             if existing_global_categories == 0:
@@ -159,7 +160,6 @@ def init_db():
                     ('勉強', DEFAULT_COLORS[2], None)
                 ]
                 conn.executemany('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', default_categories)
-                print("Default categories created successfully")
         except Exception as e:
             print(f"Warning: Could not create default categories: {e}")
         
@@ -169,71 +169,18 @@ def init_db():
         
     except Exception as e:
         print(f"Database initialization error: {e}")
-        # エラーが発生してもアプリを継続実行
-        pass
 
-# アプリケーション起動前のヘルスチェック
-def health_check():
-    """アプリケーションの基本的なヘルスチェック"""
-    try:
-        # データベース接続テスト
-        conn = get_db_connection()
-        conn.execute('SELECT 1')
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Health check failed: {e}")
-        return False
-
-# 初期化フラグ（重複実行防止）
+# 初期化フラグ
 _initialized = False
 
 def ensure_initialization():
-    """初期化の実行を保証（重複実行防止）"""
     global _initialized
     if not _initialized:
-        print("Performing one-time initialization...")
         init_db()
         _initialized = True
-        print("Initialization completed")
 
-# Flaskアプリケーションのエラーハンドラー
-@app.errorhandler(500)
-def internal_error(error):
-    """内部サーバーエラーのハンドリング"""
-    print(f"Internal server error: {error}")
-    return "Internal Server Error", 500
-
-@app.errorhandler(404)
-def not_found(error):
-    """404エラーのハンドリング"""
-    return "Page Not Found", 404
-
-# ヘルスチェックエンドポイント（Render用）
-@app.route('/health')
-def health():
-    """ヘルスチェックエンドポイント"""
-    try:
-        # 初期化を確認
-        ensure_initialization()
-        
-        # データベース接続テスト
-        conn = get_db_connection()
-        conn.execute('SELECT 1')
-        conn.close()
-        return {"status": "healthy", "timestamp": datetime.now().isoformat()}, 200
-    except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}, 500
-
-# 最初のリクエスト前に初期化実行（Flask 2.2以降対応）
-def initialize_on_first_request():
-    """最初のリクエスト前にデータベースを初期化"""
-    ensure_initialization()
-
-# Flask 2.2以降の方式でリクエスト前処理
 @app.before_request
 def before_request():
-    """各リクエスト前に実行（初回のみ初期化）"""
     ensure_initialization()
 
 def login_required(f):
@@ -246,7 +193,6 @@ def login_required(f):
 
 @app.route('/')
 def landing():
-    """ランディングページ"""
     return render_template('landing.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -262,6 +208,7 @@ def login():
         if user and check_password_hash(user['password_hash'], password):
             session['user_id'] = user['id']
             session['username'] = user['username']
+            session.pop('guest_mode', None)
             flash('ログインしました！', 'success')
             return redirect(url_for('index'))
         else:
@@ -289,8 +236,7 @@ def register():
         
         conn = get_db_connection()
         try:
-            conn.execute('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
-                        (username, email, password_hash))
+            conn.execute('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)', (username, email, password_hash))
             conn.commit()
             conn.close()
             flash('アカウントが作成されました！ログインしてください。', 'success')
@@ -303,7 +249,7 @@ def register():
 
 @app.route('/guest')
 def guest_mode():
-    """ゲストモードで開始"""
+    session.clear()
     session['guest_mode'] = True
     flash('ゲストモードで開始しました。データは保存されません。', 'info')
     return redirect(url_for('index'))
@@ -315,28 +261,19 @@ def logout():
     return redirect(url_for('landing'))
 
 @app.route('/dashboard')
+@app.route('/index')
 @login_required
 def index():
     user_id = get_current_user_id()
     
     if user_id:
-        # 認証ユーザーのタスクとカテゴリ色を取得
         conn = get_db_connection()
-        tasks = conn.execute('''
-            SELECT t.*, c.color as category_color 
-            FROM tasks t 
-            LEFT JOIN categories c ON t.category_id = c.id 
-            WHERE t.user_id = ? 
-            ORDER BY t.completed, t.due_date ASC
-        ''', (user_id,)).fetchall()
+        tasks = conn.execute('SELECT t.*, c.color as category_color FROM tasks t LEFT JOIN categories c ON t.category_id = c.id WHERE t.user_id = ? ORDER BY t.completed, t.due_date ASC', (user_id,)).fetchall()
         conn.close()
     else:
-        # ゲストモードの場合、セッション内のタスクを使用
         tasks = session.get('guest_tasks', [])
         
-        # ゲストタスクにカテゴリ色を追加
         if tasks:
-            # カテゴリ情報を取得
             conn = get_db_connection()
             db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
             conn.close()
@@ -348,39 +285,172 @@ def index():
             for cat in session.get('guest_categories', []):
                 all_categories[cat['id']] = cat['color']
             
-            # タスクにカテゴリ色を追加
             for task in tasks:
                 task['category_color'] = all_categories.get(task.get('category_id'), '#6c757d')
     
     is_guest = 'guest_mode' in session
     return render_template('index.html', tasks=tasks, is_guest=is_guest)
 
-@app.route('/login')
-def login():
-    """ログインページ"""
-    try:
-        return "<h1>Login Page</h1><p>Please implement login functionality</p><a href='/'>Back to Home</a>"
-    except Exception as e:
-        print(f"Login route error: {e}")
-        return f"Error: {str(e)}", 500
-
-@app.route('/test')
-def test():
-    """テストエンドポイント"""
-    try:
-        # データベース接続テスト
-        conn = get_db_connection()
-        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+@app.route('/add', methods=['GET', 'POST'])
+@login_required
+def add_task():
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form.get('description', '')
+        due_date = request.form.get('due_date', '')
+        due_time = request.form.get('due_time', '')
+        category_id = request.form.get('category_id', '')
+        new_category = request.form.get('new_category', '')
+        priority = request.form.get('priority', 'medium')
         
-        # 各テーブルの件数も確認
-        table_info = {}
-        for table in tables:
-            count = conn.execute(f"SELECT COUNT(*) FROM {table['name']}").fetchone()[0]
-            table_info[table['name']] = count
+        user_id = get_current_user_id()
+        final_category_id = None
+        final_category_name = ''
+        
+        try:
+            if category_id == 'other' and new_category:
+                if user_id:
+                    conn = get_db_connection()
+                    try:
+                        cursor = conn.execute('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', (new_category, DEFAULT_COLORS[0], user_id))
+                        final_category_id = cursor.lastrowid
+                        final_category_name = new_category
+                        conn.commit()
+                        conn.close()
+                    except sqlite3.IntegrityError:
+                        conn.close()
+                        flash('同じ名前のカテゴリが既に存在します。', 'error')
+                        return redirect(url_for('add_task'))
+                else:
+                    if 'guest_categories' not in session:
+                        session['guest_categories'] = []
+                    
+                    guest_categories = session.get('guest_categories', [])
+                    if any(cat['name'] == new_category for cat in guest_categories):
+                        flash('同じ名前のカテゴリが既に存在します。', 'error')
+                        return redirect(url_for('add_task'))
+                    
+                    new_cat_id = max([cat['id'] for cat in guest_categories], default=1000) + 1
+                    new_category_obj = {'id': new_cat_id, 'name': new_category, 'color': DEFAULT_COLORS[0], 'user_id': None}
+                    guest_categories.append(new_category_obj)
+                    session['guest_categories'] = guest_categories
+                    session.modified = True
+                    
+                    final_category_id = new_cat_id
+                    final_category_name = new_category
+            
+            elif category_id and category_id != 'other':
+                final_category_id = int(category_id)
+                if user_id:
+                    conn = get_db_connection()
+                    cat = conn.execute('SELECT name FROM categories WHERE id = ?', (final_category_id,)).fetchone()
+                    final_category_name = cat['name'] if cat else ''
+                    conn.close()
+                else:
+                    all_categories = []
+                    conn = get_db_connection()
+                    db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
+                    conn.close()
+                    all_categories.extend(db_categories)
+                    all_categories.extend(session.get('guest_categories', []))
+                    
+                    for cat in all_categories:
+                        if cat['id'] == final_category_id:
+                            final_category_name = cat['name']
+                            break
+            
+            if user_id:
+                conn = get_db_connection()
+                conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, category_id, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (title, description, due_date, due_time, final_category_name, final_category_id, priority, user_id))
+                conn.commit()
+                conn.close()
+            else:
+                if 'guest_tasks' not in session:
+                    session['guest_tasks'] = []
+                
+                existing_ids = [task['id'] for task in session['guest_tasks']]
+                new_id = max(existing_ids, default=0) + 1
+                
+                new_task = {'id': new_id, 'title': title, 'description': description, 'due_date': due_date, 'due_time': due_time, 'category': final_category_name, 'category_id': final_category_id, 'priority': priority, 'completed': 0, 'created_at': datetime.now().isoformat()}
+                
+                guest_tasks = session['guest_tasks'].copy()
+                guest_tasks.append(new_task)
+                session['guest_tasks'] = guest_tasks
+                session.modified = True
+            
+            flash('タスクを追加しました！', 'success')
+            return redirect(url_for('index'))
+            
+        except Exception as e:
+            print(f"Add task error: {e}")
+            flash(f'タスクの追加に失敗しました: {str(e)}', 'error')
+    
+    if 'guest_mode' in session:
+        conn = get_db_connection()
+        db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
+        conn.close()
+        
+        categories = list(db_categories)
+        categories.extend(session.get('guest_categories', []))
+    else:
+        conn = get_db_connection()
+        user_id = session.get('user_id')
+        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC', (user_id,)).fetchall()
+        conn.close()
+    
+    return render_template('add_task.html', categories=categories)
+
+@app.route('/complete/<int:id>')
+@login_required
+def complete_task(id):
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        task = conn.execute('SELECT * FROM tasks WHERE id = ? AND user_id = ?', (id, user_id)).fetchone()
+        
+        if task:
+            new_status = 0 if task['completed'] else 1
+            conn.execute('UPDATE tasks SET completed = ? WHERE id = ? AND user_id = ?', (new_status, id, user_id))
+            conn.commit()
+            conn.close()
+            
+            status_text = "完了" if new_status else "未完了"
+            flash(f'タスクを{status_text}にしました！', 'success')
+        else:
+            conn.close()
+            flash('タスクが見つかりません！', 'error')
+    else:
+        guest_tasks = session.get('guest_tasks', [])
+        for task in guest_tasks:
+            if task['id'] == id:
+                task['completed'] = 0 if task['completed'] else 1
+                session.modified = True
+                status_text = "完了" if task['completed'] else "未完了"
+                flash(f'タスクを{status_text}にしました！', 'success')
+                break
+        else:
+            flash('タスクが見つかりません！', 'error')
+    
+    return redirect(url_for('index'))
+
+@app.route('/delete/<int:id>')
+@login_required
+def delete_task(id):
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        result = conn.execute('DELETE FROM tasks WHERE id = ? AND user_id = ?', (id, user_id))
+        
+        if result.rowcount > 0:
+            conn.commit()
+            flash('タスクを削除しました！', 'success')
+        else:
+            flash('タスクが見つかりません！', 'error')
         
         conn.close()
     else:
-        # ゲストモードの場合
         guest_tasks = session.get('guest_tasks', [])
         original_length = len(guest_tasks)
         session['guest_tasks'] = [task for task in guest_tasks if task['id'] != id]
@@ -396,10 +466,8 @@ def test():
 @app.route('/categories')
 @login_required
 def categories():
-    """カテゴリ管理ページ"""
     try:
         if 'guest_mode' in session:
-            # ゲストモード：デフォルトカテゴリ + セッションカテゴリ
             conn = get_db_connection()
             db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
             conn.close()
@@ -407,7 +475,6 @@ def categories():
             categories = [{'id': cat['id'], 'name': cat['name'], 'color': cat['color']} for cat in db_categories]
             categories.extend(session.get('guest_categories', []))
             
-            # ゲストモードのタスク数計算
             guest_tasks = session.get('guest_tasks', [])
             task_counts = {}
             for task in guest_tasks:
@@ -416,48 +483,27 @@ def categories():
                     task_counts[category_name] = task_counts.get(category_name, 0) + 1
             
         else:
-            # ログインユーザー：全カテゴリ
             conn = get_db_connection()
             user_id = session.get('user_id')
             
-            # カテゴリとタスク数を一緒に取得
-            categories_with_counts = conn.execute('''
-                SELECT c.id, c.name, c.color, COUNT(t.id) as task_count
-                FROM categories c
-                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
-                WHERE c.user_id IS NULL OR c.user_id = ?
-                GROUP BY c.id, c.name, c.color
-                ORDER BY c.user_id IS NULL DESC, c.name ASC
-            ''', (user_id, user_id)).fetchall()
+            categories_with_counts = conn.execute('SELECT c.id, c.name, c.color, COUNT(t.id) as task_count FROM categories c LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? WHERE c.user_id IS NULL OR c.user_id = ? GROUP BY c.id, c.name, c.color ORDER BY c.user_id IS NULL DESC, c.name ASC', (user_id, user_id)).fetchall()
             
             conn.close()
             
             categories = []
             task_counts = {}
             for cat in categories_with_counts:
-                categories.append({
-                    'id': cat['id'],
-                    'name': cat['name'],
-                    'color': cat['color']
-                })
+                categories.append({'id': cat['id'], 'name': cat['name'], 'color': cat['color']})
                 task_counts[cat['name']] = cat['task_count']
         
         is_guest = 'guest_mode' in session
         
-        return render_template('categories.html', 
-                             categories=categories, 
-                             task_counts=task_counts,
-                             default_colors=DEFAULT_COLORS,
-                             is_guest=is_guest)
+        return render_template('categories.html', categories=categories, task_counts=task_counts, default_colors=DEFAULT_COLORS, is_guest=is_guest)
     
     except Exception as e:
         print(f"Categories route error: {e}")
         flash(f'カテゴリの取得に失敗しました: {str(e)}', 'error')
-        return render_template('categories.html', 
-                             categories=[], 
-                             task_counts={},
-                             default_colors=DEFAULT_COLORS,
-                             is_guest='guest_mode' in session)
+        return render_template('categories.html', categories=[], task_counts={}, default_colors=DEFAULT_COLORS, is_guest='guest_mode' in session)
 
 @app.route('/add_category', methods=['GET', 'POST'])
 @login_required
@@ -474,7 +520,6 @@ def add_category():
             return redirect(url_for('categories'))
         
         if 'guest_mode' in session:
-            # ゲストモード：セッションに追加
             if 'guest_categories' not in session:
                 session['guest_categories'] = []
             
@@ -484,25 +529,16 @@ def add_category():
                 return redirect(url_for('categories'))
             
             new_cat_id = max([cat['id'] for cat in guest_categories], default=1000) + 1
-            new_category = {
-                'id': new_cat_id,
-                'name': name,
-                'color': color,
-                'user_id': None
-            }
+            new_category = {'id': new_cat_id, 'name': name, 'color': color, 'user_id': None}
             
             guest_categories.append(new_category)
             session['guest_categories'] = guest_categories
             session.modified = True
             flash('カテゴリを追加しました。（ゲストモード）', 'success')
         else:
-            # ログインユーザー：データベースに追加
             conn = get_db_connection()
             try:
-                conn.execute(
-                    'INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)',
-                    (name, color, session.get('user_id'))
-                )
+                conn.execute('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', (name, color, session.get('user_id')))
                 conn.commit()
                 conn.close()
                 flash('カテゴリを追加しました。', 'success')
@@ -519,36 +555,96 @@ def add_category():
 @app.route('/delete_category/<int:category_id>', methods=['POST'])
 @login_required
 def delete_category(category_id):
-    """カテゴリを削除"""
     try:
         if 'guest_mode' in session:
-            # ゲストモード：セッションから削除
             guest_categories = session.get('guest_categories', [])
             session['guest_categories'] = [cat for cat in guest_categories if cat['id'] != category_id]
             session.modified = True
             flash('カテゴリを削除しました。（ゲストモード）', 'success')
         else:
-            # ログインユーザー：データベースから削除
             conn = get_db_connection()
             user_id = session.get('user_id')
             
-            result = conn.execute(
-                'DELETE FROM categories WHERE id = ? AND user_id = ?',
-                (category_id, user_id)
-            )
+            result = conn.execute('DELETE FROM categories WHERE id = ? AND user_id = ?', (category_id, user_id))
             
             if result.rowcount > 0:
                 conn.commit()
                 flash('カテゴリを削除しました。', 'success')
             else:
-                flash('削除できませんでした。デフォルトカテゴリまたは他のユーザーのカテゴリは削除できません。', 'error')
+                flash('削除できませんでした。', 'error')
             
             conn.close()
     
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        print(f"Delete category error: {e}")
+        flash(f'カテゴリの削除に失敗しました: {str(e)}', 'error')
+    
+    return redirect(url_for('categories'))
 
-# チャート生成エンドポイントを修正
+@app.route('/analytics')
+@login_required
+def analytics():
+    user_id = get_current_user_id()
+    
+    try:
+        if user_id:
+            conn = get_db_connection()
+            
+            total_tasks = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ?', (user_id,)).fetchone()[0]
+            completed_tasks = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ? AND completed = 1', (user_id,)).fetchone()[0]
+            incomplete_tasks = total_tasks - completed_tasks
+            
+            category_data = conn.execute('SELECT c.name, c.color, COUNT(t.id) as total, SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed FROM categories c LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? WHERE c.user_id IS NULL OR c.user_id = ? GROUP BY c.id, c.name, c.color HAVING COUNT(t.id) > 0 ORDER BY COUNT(t.id) DESC', (user_id, user_id)).fetchall()
+            
+            category_stats = {}
+            for cat in category_data:
+                category_stats[cat['name']] = {'total': cat['total'], 'completed': cat['completed'], 'color': cat['color']}
+            
+            priority_data = conn.execute('SELECT priority, COUNT(*) as total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed FROM tasks WHERE user_id = ? GROUP BY priority', (user_id,)).fetchall()
+            
+            priority_stats = {}
+            for pri in priority_data:
+                priority_stats[pri['priority']] = {'total': pri['total'], 'completed': pri['completed']}
+            
+            conn.close()
+        else:
+            guest_tasks = session.get('guest_tasks', [])
+            total_tasks = len(guest_tasks)
+            completed_tasks = sum(1 for task in guest_tasks if task.get('completed'))
+            incomplete_tasks = total_tasks - completed_tasks
+            
+            category_counts = {}
+            category_completed = {}
+            for task in guest_tasks:
+                category = task.get('category', 'Uncategorized')
+                category_counts[category] = category_counts.get(category, 0) + 1
+                if task.get('completed'):
+                    category_completed[category] = category_completed.get(category, 0) + 1
+            
+            category_stats = {}
+            for category, total in category_counts.items():
+                category_stats[category] = {'total': total, 'completed': category_completed.get(category, 0), 'color': '#6c757d'}
+            
+            priority_counts = {}
+            priority_completed = {}
+            for task in guest_tasks:
+                priority = task.get('priority', 'medium')
+                priority_counts[priority] = priority_counts.get(priority, 0) + 1
+                if task.get('completed'):
+                    priority_completed[priority] = priority_completed.get(priority, 0) + 1
+            
+            priority_stats = {}
+            for priority, total in priority_counts.items():
+                priority_stats[priority] = {'total': total, 'completed': priority_completed.get(priority, 0)}
+        
+        return render_template('analytics.html', total_tasks=total_tasks, completed_tasks=completed_tasks, incomplete_tasks=incomplete_tasks, category_stats=category_stats, priority_stats=priority_stats, is_guest='guest_mode' in session)
+    
+    except Exception as e:
+        print(f"Analytics error: {e}")
+        flash(f'分析データの取得に失敗しました: {str(e)}', 'error')
+        return render_template('analytics.html', total_tasks=0, completed_tasks=0, incomplete_tasks=0, category_stats={}, priority_stats={}, is_guest='guest_mode' in session)
+
+# チャート生成エンドポイント
 @app.route('/chart/<chart_type>')
 @login_required
 def generate_chart(chart_type):
@@ -579,37 +675,18 @@ def generate_chart(chart_type):
             image_data = create_pie_chart(chart_data, 'タスク完了状況')
             return Response(image_data, mimetype='image/png')
             
-        elif chart_type == 'category_stacked':
-            chart_data = get_category_detailed_data(user_id)
-            if not chart_data:
-                return create_no_data_response("カテゴリ別詳細データがありません")
-            
-            image_data = create_stacked_bar_chart(chart_data, 'カテゴリ別詳細統計')
-            return Response(image_data, mimetype='image/png')
-        
         else:
             return create_no_data_response("不正なチャートタイプです")
             
     except Exception as e:
         print(f"Chart generation error: {e}")
-        import traceback
-        traceback.print_exc()
         return create_no_data_response(f"グラフ生成エラー: {str(e)}")
 
 def get_category_data(user_id):
-    """カテゴリ別データを取得"""
     try:
         if user_id:
             conn = get_db_connection()
-            data = conn.execute('''
-                SELECT c.name, c.color, COUNT(t.id) as count
-                FROM categories c
-                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
-                WHERE (c.user_id IS NULL OR c.user_id = ?)
-                GROUP BY c.id, c.name, c.color
-                HAVING COUNT(t.id) > 0
-                ORDER BY COUNT(t.id) DESC
-            ''', (user_id, user_id)).fetchall()
+            data = conn.execute('SELECT c.name, c.color, COUNT(t.id) as count FROM categories c LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? WHERE (c.user_id IS NULL OR c.user_id = ?) GROUP BY c.id, c.name, c.color HAVING COUNT(t.id) > 0 ORDER BY COUNT(t.id) DESC', (user_id, user_id)).fetchall()
             conn.close()
             
             return [{'name': row['name'], 'count': row['count'], 'color': row['color']} for row in data]
@@ -629,7 +706,6 @@ def get_category_data(user_id):
         return []
 
 def get_priority_data(user_id):
-    """優先度別データを取得"""
     try:
         if user_id:
             conn = get_db_connection()
@@ -652,7 +728,6 @@ def get_priority_data(user_id):
         return []
 
 def get_completion_data(user_id):
-    """完了状況データを取得"""
     try:
         if user_id:
             conn = get_db_connection()
@@ -667,57 +742,12 @@ def get_completion_data(user_id):
         if completed == 0 and incomplete == 0:
             return []
         
-        return [
-            {'name': '完了', 'count': completed, 'color': '#28a745'},
-            {'name': '未完了', 'count': incomplete, 'color': '#ffc107'}
-        ]
+        return [{'name': '完了', 'count': completed, 'color': '#28a745'}, {'name': '未完了', 'count': incomplete, 'color': '#ffc107'}]
     except Exception as e:
         print(f"Error getting completion data: {e}")
         return []
 
-def get_category_detailed_data(user_id):
-    """カテゴリ別詳細データを取得"""
-    try:
-        if user_id:
-            conn = get_db_connection()
-            data = conn.execute('''
-                SELECT c.name, c.color,
-                       SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed,
-                       SUM(CASE WHEN t.completed = 0 THEN 1 ELSE 0 END) as incomplete
-                FROM categories c
-                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
-                WHERE (c.user_id IS NULL OR c.user_id = ?)
-                GROUP BY c.id, c.name, c.color
-                HAVING (completed > 0 OR incomplete > 0)
-                ORDER BY (completed + incomplete) DESC
-            ''', (user_id, user_id)).fetchall()
-            conn.close()
-            
-            return [{'name': row['name'], 'completed': row['completed'], 'incomplete': row['incomplete'], 'color': row['color']} for row in data]
-        else:
-            guest_tasks = session.get('guest_tasks', [])
-            if not guest_tasks:
-                return []
-            
-            category_stats = {}
-            for task in guest_tasks:
-                category = task.get('category', 'Uncategorized')
-                if category not in category_stats:
-                    category_stats[category] = {'completed': 0, 'incomplete': 0, 'color': '#6c757d'}
-                
-                if task.get('completed'):
-                    category_stats[category]['completed'] += 1
-                else:
-                    category_stats[category]['incomplete'] += 1
-            
-            return [{'name': k, 'completed': v['completed'], 'incomplete': v['incomplete'], 'color': v['color']} 
-                   for k, v in category_stats.items()]
-    except Exception as e:
-        print(f"Error getting category detailed data: {e}")
-        return []
-
 def create_pie_chart(data, title):
-    """円グラフを作成"""
     try:
         filtered_data = [item for item in data if item['count'] > 0]
         if not filtered_data:
@@ -729,18 +759,12 @@ def create_pie_chart(data, title):
         
         fig, ax = plt.subplots(figsize=(10, 8))
         
-        # 日本語表示のための設定
         if font_prop:
-            wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, 
-                                             autopct='%1.1f%%', startangle=90,
-                                             textprops={'fontproperties': font_prop, 'fontsize': 10})
+            wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, textprops={'fontproperties': font_prop, 'fontsize': 10})
             ax.set_title(title, fontproperties=font_prop, fontsize=16, fontweight='bold', pad=20)
         else:
-            # フォールバック（英語表示）
             english_labels = [f"Category {i+1}" for i in range(len(labels))]
-            wedges, texts, autotexts = ax.pie(sizes, labels=english_labels, colors=colors, 
-                                             autopct='%1.1f%%', startangle=90,
-                                             textprops={'fontsize': 10})
+            wedges, texts, autotexts = ax.pie(sizes, labels=english_labels, colors=colors, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 10})
             ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
         
         for autotext in autotexts:
@@ -761,7 +785,6 @@ def create_pie_chart(data, title):
         return create_no_data_image(title)
 
 def create_bar_chart(data, title):
-    """棒グラフを作成"""
     try:
         if not data:
             return create_no_data_image(title)
@@ -769,7 +792,6 @@ def create_bar_chart(data, title):
         labels = [item['priority'] for item in data]
         values = [item['count'] for item in data]
         
-        # 優先度別の色設定
         colors = []
         for label in labels:
             if label == 'high':
@@ -784,7 +806,6 @@ def create_bar_chart(data, title):
         fig, ax = plt.subplots(figsize=(10, 6))
         bars = ax.bar(labels, values, color=colors)
         
-        # 日本語表示のための設定
         if font_prop:
             ax.set_title(title, fontproperties=font_prop, fontsize=16, fontweight='bold', pad=20)
             ax.set_xlabel('優先度', fontproperties=font_prop, fontsize=12)
@@ -794,11 +815,9 @@ def create_bar_chart(data, title):
             ax.set_xlabel('Priority', fontsize=12)
             ax.set_ylabel('Number of Tasks', fontsize=12)
         
-        # 値をバーの上に表示
         for bar in bars:
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
-                   f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1, f'{int(height)}', ha='center', va='bottom', fontweight='bold')
         
         ax.grid(axis='y', linestyle='--', alpha=0.7)
         plt.tight_layout()
@@ -814,90 +833,16 @@ def create_bar_chart(data, title):
         print(f"Bar chart generation error: {e}")
         return create_no_data_image(title)
 
-def create_stacked_bar_chart(data, title):
-    """積み上げ棒グラフを作成（提供されたコードを参考）"""
-    try:
-        if not data:
-            return create_no_data_image(title)
-        
-        categories = [item['name'] for item in data]
-        completed = [item['completed'] for item in data]
-        incomplete = [item['incomplete'] for item in data]
-        
-        fig, ax = plt.subplots(figsize=(12, 6))
-        
-        x = range(len(categories))
-        width = 0.6
-        
-        # 完了タスクの棒グラフ
-        bars1 = ax.bar(x, completed, width, label='完了', color='#28a745')
-        # 未完了タスクの棒グラフ（完了タスクの上に積み上げ）
-        bars2 = ax.bar(x, incomplete, width, bottom=completed, label='未完了', color='#ffc107')
-        
-        # 日本語表示のための設定
-        if font_prop:
-            ax.set_title(title, fontproperties=font_prop, fontsize=16, fontweight='bold', pad=20)
-            ax.set_xlabel('カテゴリ', fontproperties=font_prop, fontsize=12)
-            ax.set_ylabel('タスク数', fontproperties=font_prop, fontsize=12)
-            ax.set_xticklabels([''] + categories, fontproperties=font_prop, rotation=45, ha='right')
-            ax.legend(prop=font_prop)
-        else:
-            ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
-            ax.set_xlabel('Category', fontsize=12)
-            ax.set_ylabel('Number of Tasks', fontsize=12)
-            ax.set_xticklabels([''] + [f"Cat{i+1}" for i in range(len(categories))], rotation=45, ha='right')
-            ax.legend()
-        
-        ax.set_xticks(x)
-        
-        # 各セクションにラベルを表示
-        for i, (comp, incomp) in enumerate(zip(completed, incomplete)):
-            # 完了部分のラベル
-            if comp > 0:
-                ax.text(i, comp / 2, '完了' if font_prop else 'Done', 
-                       ha='center', va='center', fontweight='bold', 
-                       fontproperties=font_prop if font_prop else None,
-                       color='white', fontsize=9)
-            
-            # 未完了部分のラベル
-            if incomp > 0:
-                ax.text(i, comp + incomp / 2, '未完了' if font_prop else 'Todo', 
-                       ha='center', va='center', fontweight='bold',
-                       fontproperties=font_prop if font_prop else None,
-                       color='black', fontsize=9)
-            
-            # 合計値をバーの上に表示
-            total = comp + incomp
-            if total > 0:
-                ax.text(i, total + 0.1, str(total), ha='center', va='bottom', fontweight='bold')
-        
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.tight_layout()
-        
-        img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=150)
-        img.seek(0)
-        image_data = img.getvalue()
-        plt.close()
-        
-        return image_data
-    except Exception as e:
-        print(f"Stacked bar chart generation error: {e}")
-        return create_no_data_image(title)
-
 def create_no_data_image(title):
-    """データがない場合の画像を生成"""
     try:
         fig, ax = plt.subplots(figsize=(8, 6))
         
         message = 'データがありません'
         if font_prop:
-            ax.text(0.5, 0.5, message, horizontalalignment='center', verticalalignment='center',
-                    transform=ax.transAxes, fontsize=16, color='gray', fontproperties=font_prop)
+            ax.text(0.5, 0.5, message, horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, fontsize=16, color='gray', fontproperties=font_prop)
             ax.set_title(title, fontproperties=font_prop, fontsize=14)
         else:
-            ax.text(0.5, 0.5, 'No Data Available', horizontalalignment='center', verticalalignment='center',
-                    transform=ax.transAxes, fontsize=16, color='gray')
+            ax.text(0.5, 0.5, 'No Data Available', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, fontsize=16, color='gray')
             ax.set_title(title, fontsize=14)
         
         ax.set_xlim(0, 1)
@@ -916,37 +861,53 @@ def create_no_data_image(title):
         return b''
 
 def create_no_data_response(message):
-    """データがない場合のレスポンスを作成"""
     image_data = create_no_data_image(message)
     return Response(image_data, mimetype='image/png')
 
-def get_current_user_id():
-    return session.get('user_id') if 'guest_mode' not in session else None
-
-# アプリケーション起動時に初期化を実行
-print("Starting application initialization...")
-ensure_initialization()
-print("Application initialization completed")
-
-# gunicorn用のアプリケーションオブジェクト
-application = app
-
-# 開発環境での直接実行
-if __name__ == '__main__':
+@app.route('/test')
+def test():
     try:
-        port = int(os.environ.get('PORT', 5000))
-        host = '0.0.0.0'
+        conn = get_db_connection()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         
-        print(f"Starting Flask app on {host}:{port}")
+        table_info = {}
+        for table in tables:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table['name']}").fetchone()[0]
+            table_info[table['name']] = count
         
-        debug_mode = os.environ.get('FLASK_ENV') == 'development'
+        conn.close()
         
-        app.run(
-            host=host,
-            port=port,
-            debug=debug_mode,
-            threaded=True
-        )
+        return {
+            "status": "OK",
+            "tables": table_info,
+            "session": dict(session),
+            "font_available": font_prop is not None
+        }
     except Exception as e:
-        print(f"Error starting application: {e}")
-        exit(1)
+        return {"status": "error", "error": str(e)}, 500
+
+@app.route('/health')
+def health():
+    try:
+        ensure_initialization()
+        
+        conn = get_db_connection()
+        conn.execute('SELECT 1')
+        conn.close()
+        return {"status": "healthy", "timestamp": datetime.now().isoformat()}, 200
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}, 500
+
+@app.errorhandler(500)
+def internal_error(error):
+    return "Internal Server Error", 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return "Page Not Found", 404
+
+ensure_initialization()
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_ENV') == 'development')
