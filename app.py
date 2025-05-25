@@ -9,7 +9,7 @@ from functools import wraps
 
 # matplotlib設定を最初に行う
 import matplotlib
-matplotlib.use('Agg')  # GUIバックエンドを無効化
+matplotlib.use('Agg')
 
 # 日本語フォント設定
 import matplotlib.pyplot as plt
@@ -17,7 +17,7 @@ import matplotlib.font_manager as fm
 import io
 import base64
 
-# 日本語フォントの設定を簡素化
+# 日本語フォントの設定
 def setup_japanese_font():
     """日本語フォントを設定"""
     try:
@@ -267,34 +267,59 @@ def index():
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
 def add_task():
+    print(f"add_task called with method: {request.method}")  # デバッグ用
+    
     if request.method == 'POST':
-        title = request.form['title']
-        description = request.form.get('description', '')
-        due_date = request.form.get('due_date', '')
-        due_time = request.form.get('due_time', '')
-        category_id = request.form.get('category_id', '')
-        new_category = request.form.get('new_category', '')
-        priority = request.form.get('priority', 'medium')
-        
-        user_id = get_current_user_id()
-        final_category_id = None
-        final_category_name = ''
-        
         try:
+            print(f"Form data: {dict(request.form)}")  # デバッグ用
+            
+            title = request.form.get('title', '').strip()
+            description = request.form.get('description', '').strip()
+            due_date = request.form.get('due_date', '').strip()
+            due_time = request.form.get('due_time', '').strip()
+            category_id = request.form.get('category_id', '').strip()
+            new_category = request.form.get('new_category', '').strip()
+            priority = request.form.get('priority', 'medium')
+            
+            print(f"Parsed data - title: {title}, category_id: {category_id}, priority: {priority}")  # デバッグ用
+            
+            # バリデーション
+            if not title:
+                flash('タスクのタイトルは必須です。', 'error')
+                return redirect(url_for('add_task'))
+            
+            user_id = get_current_user_id()
+            print(f"User ID: {user_id}")  # デバッグ用
+            
+            final_category_id = None
+            final_category_name = ''
+            
+            # カテゴリ処理
             if category_id == 'other' and new_category:
+                print(f"Creating new category: {new_category}")  # デバッグ用
                 if user_id:
                     conn = get_db_connection()
                     try:
-                        cursor = conn.execute('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', (new_category, DEFAULT_COLORS[0], user_id))
+                        cursor = conn.execute('INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)', 
+                                            (new_category, DEFAULT_COLORS[0], user_id))
                         final_category_id = cursor.lastrowid
                         final_category_name = new_category
                         conn.commit()
                         conn.close()
-                    except sqlite3.IntegrityError:
+                        print(f"New category created with ID: {final_category_id}")  # デバッグ用
+                    except sqlite3.IntegrityError as e:
                         conn.close()
+                        print(f"Category creation failed: {e}")  # デバッグ用
                         flash('同じ名前のカテゴリが既に存在します。', 'error')
                         return redirect(url_for('add_task'))
+                    except Exception as e:
+                        if 'conn' in locals():
+                            conn.close()
+                        print(f"Database error in category creation: {e}")
+                        flash('カテゴリの作成でエラーが発生しました。', 'error')
+                        return redirect(url_for('add_task'))
                 else:
+                    # ゲストモード処理
                     if 'guest_categories' not in session:
                         session['guest_categories'] = []
                     
@@ -311,67 +336,129 @@ def add_task():
                     
                     final_category_id = new_cat_id
                     final_category_name = new_category
+                    print(f"Guest category created with ID: {final_category_id}")  # デバッグ用
             
             elif category_id and category_id != 'other':
-                final_category_id = int(category_id)
-                if user_id:
-                    conn = get_db_connection()
-                    cat = conn.execute('SELECT name FROM categories WHERE id = ?', (final_category_id,)).fetchone()
-                    final_category_name = cat['name'] if cat else ''
-                    conn.close()
-                else:
-                    all_categories = []
-                    conn = get_db_connection()
-                    db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
-                    conn.close()
-                    all_categories.extend(db_categories)
-                    all_categories.extend(session.get('guest_categories', []))
+                try:
+                    final_category_id = int(category_id)
+                    print(f"Using existing category ID: {final_category_id}")  # デバッグ用
                     
-                    for cat in all_categories:
-                        if cat['id'] == final_category_id:
-                            final_category_name = cat['name']
-                            break
+                    if user_id:
+                        conn = get_db_connection()
+                        cat = conn.execute('SELECT name FROM categories WHERE id = ?', (final_category_id,)).fetchone()
+                        final_category_name = cat['name'] if cat else ''
+                        conn.close()
+                    else:
+                        # ゲストモード
+                        all_categories = []
+                        conn = get_db_connection()
+                        db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
+                        conn.close()
+                        all_categories.extend(db_categories)
+                        all_categories.extend(session.get('guest_categories', []))
+                        
+                        for cat in all_categories:
+                            if cat['id'] == final_category_id:
+                                final_category_name = cat['name']
+                                break
+                    
+                    print(f"Category name resolved: {final_category_name}")  # デバッグ用
+                    
+                except (ValueError, TypeError) as e:
+                    print(f"Invalid category ID: {e}")  # デバッグ用
+                    flash('無効なカテゴリが選択されました。', 'error')
+                    return redirect(url_for('add_task'))
+            
+            # タスクの保存
+            print(f"Saving task - user_id: {user_id}")  # デバッグ用
             
             if user_id:
                 conn = get_db_connection()
-                conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, category_id, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (title, description, due_date, due_time, final_category_name, final_category_id, priority, user_id))
-                conn.commit()
-                conn.close()
+                try:
+                    conn.execute('''INSERT INTO tasks (title, description, due_date, due_time, category, category_id, priority, user_id) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', 
+                               (title, description, due_date, due_time, final_category_name, final_category_id, priority, user_id))
+                    conn.commit()
+                    conn.close()
+                    print("Task saved successfully to database")  # デバッグ用
+                except Exception as e:
+                    conn.close()
+                    print(f"Database error in task creation: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    flash(f'タスクの保存でエラーが発生しました: {str(e)}', 'error')
+                    return redirect(url_for('add_task'))
             else:
-                if 'guest_tasks' not in session:
-                    session['guest_tasks'] = []
-                
-                existing_ids = [task['id'] for task in session['guest_tasks']]
-                new_id = max(existing_ids, default=0) + 1
-                
-                new_task = {'id': new_id, 'title': title, 'description': description, 'due_date': due_date, 'due_time': due_time, 'category': final_category_name, 'category_id': final_category_id, 'priority': priority, 'completed': 0, 'created_at': datetime.now().isoformat()}
-                
-                guest_tasks = session['guest_tasks'].copy()
-                guest_tasks.append(new_task)
-                session['guest_tasks'] = guest_tasks
-                session.modified = True
+                # ゲストモード
+                try:
+                    if 'guest_tasks' not in session:
+                        session['guest_tasks'] = []
+                    
+                    existing_ids = [task['id'] for task in session['guest_tasks']]
+                    new_id = max(existing_ids, default=0) + 1
+                    
+                    new_task = {
+                        'id': new_id, 
+                        'title': title, 
+                        'description': description, 
+                        'due_date': due_date, 
+                        'due_time': due_time, 
+                        'category': final_category_name, 
+                        'category_id': final_category_id, 
+                        'priority': priority, 
+                        'completed': 0, 
+                        'created_at': datetime.now().isoformat()
+                    }
+                    
+                    guest_tasks = session['guest_tasks'].copy()
+                    guest_tasks.append(new_task)
+                    session['guest_tasks'] = guest_tasks
+                    session.modified = True
+                    print(f"Task saved successfully to session: {new_task}")  # デバッグ用
+                except Exception as e:
+                    print(f"Session error in task creation: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    flash(f'タスクの保存でエラーが発生しました: {str(e)}', 'error')
+                    return redirect(url_for('add_task'))
             
             flash('タスクを追加しました！', 'success')
+            print("Task creation completed successfully")  # デバッグ用
             return redirect(url_for('index'))
             
         except Exception as e:
-            print(f"Add task error: {e}")
-            flash(f'タスクの追加に失敗しました: {str(e)}', 'error')
+            print(f"General error in add_task: {e}")
+            import traceback
+            traceback.print_exc()
+            flash(f'タスクの追加でエラーが発生しました: {str(e)}', 'error')
+            return redirect(url_for('add_task'))
     
-    if 'guest_mode' in session:
-        conn = get_db_connection()
-        db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
-        conn.close()
+    # GET request - カテゴリ一覧を取得してフォームを表示
+    try:
+        print("Loading add_task form")  # デバッグ用
         
-        categories = list(db_categories)
-        categories.extend(session.get('guest_categories', []))
-    else:
-        conn = get_db_connection()
-        user_id = session.get('user_id')
-        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC', (user_id,)).fetchall()
-        conn.close()
+        if 'guest_mode' in session:
+            conn = get_db_connection()
+            db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
+            conn.close()
+            
+            categories = list(db_categories)
+            categories.extend(session.get('guest_categories', []))
+        else:
+            conn = get_db_connection()
+            user_id = session.get('user_id')
+            categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC', (user_id,)).fetchall()
+            conn.close()
+        
+        print(f"Categories loaded: {len(categories)}")  # デバッグ用
+        return render_template('add_task.html', categories=categories)
     
-    return render_template('add_task.html', categories=categories)
+    except Exception as e:
+        print(f"Error loading add_task form: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('フォームの読み込みでエラーが発生しました。', 'error')
+        return render_template('add_task.html', categories=[])
 
 @app.route('/complete/<int:id>')
 @login_required
