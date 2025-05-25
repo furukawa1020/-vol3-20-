@@ -667,83 +667,85 @@ def analytics():
 @app.route('/chart/<chart_type>')
 @login_required
 def generate_chart(chart_type):
-    user_id = get_current_user_id()
-    
     try:
+        user_id = get_current_user_id()
+        
         if chart_type == 'category_pie':
-            chart_data = get_category_data(user_id)
-            if not chart_data:
-                return create_no_data_response("カテゴリ別データがありません")
-            
-            image_data = create_pie_chart(chart_data, 'カテゴリ別タスク分布')
-            return Response(image_data, mimetype='image/png')
-            
+            data = get_category_data(user_id)
+            image_data = create_pie_chart(data, "カテゴリ別タスク分布")
         elif chart_type == 'priority_bar':
-            chart_data = get_priority_data(user_id)
-            if not chart_data:
-                return create_no_data_response("優先度別データがありません")
-            
-            image_data = create_bar_chart(chart_data, '優先度別タスク分布')
-            return Response(image_data, mimetype='image/png')
-            
+            data = get_priority_data(user_id)
+            image_data = create_bar_chart(data, "優先度別タスク分布")
         elif chart_type == 'completion_status':
-            chart_data = get_completion_data(user_id)
-            if not chart_data:
-                return create_no_data_response("完了状況データがありません")
-            
-            image_data = create_pie_chart(chart_data, 'タスク完了状況')
-            return Response(image_data, mimetype='image/png')
-            
+            data = get_completion_data(user_id)
+            image_data = create_pie_chart(data, "タスク完了状況")
+        elif chart_type == 'category_stacked':
+            data = get_category_data(user_id)
+            image_data = create_bar_chart(data, "カテゴリ別詳細")
         else:
-            return create_no_data_response("不正なチャートタイプです")
-            
+            return create_no_data_response("不明なチャートタイプです")
+        
+        return Response(image_data, mimetype='image/png')
+        
     except Exception as e:
         print(f"Chart generation error: {e}")
-        return create_no_data_response(f"グラフ生成エラー: {str(e)}")
+        return Response(create_simple_error_image(), mimetype='image/png')
 
 def get_category_data(user_id):
     try:
         if user_id:
             conn = get_db_connection()
-            data = conn.execute('SELECT c.name, c.color, COUNT(t.id) as count FROM categories c LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? WHERE (c.user_id IS NULL OR c.user_id = ?) GROUP BY c.id, c.name, c.color HAVING COUNT(t.id) > 0 ORDER BY COUNT(t.id) DESC', (user_id, user_id)).fetchall()
+            data = conn.execute('''
+                SELECT c.name, c.color, COUNT(t.id) as count 
+                FROM categories c 
+                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? 
+                WHERE c.user_id IS NULL OR c.user_id = ? 
+                GROUP BY c.id, c.name, c.color 
+                HAVING COUNT(t.id) > 0
+            ''', (user_id, user_id)).fetchall()
             conn.close()
             
             return [{'name': row['name'], 'count': row['count'], 'color': row['color']} for row in data]
         else:
+            # ゲストモード
             guest_tasks = session.get('guest_tasks', [])
-            if not guest_tasks:
-                return []
-            
             category_counts = {}
             for task in guest_tasks:
                 category = task.get('category', 'Uncategorized')
                 category_counts[category] = category_counts.get(category, 0) + 1
             
-            return [{'name': name, 'count': count, 'color': '#6c757d'} for name, count in category_counts.items()]
+            return [{'name': cat, 'count': count, 'color': '#6c757d'} 
+                   for cat, count in category_counts.items()]
+        
     except Exception as e:
-        print(f"Error getting category data: {e}")
+        print(f"Category data error: {e}")
         return []
 
 def get_priority_data(user_id):
     try:
         if user_id:
             conn = get_db_connection()
-            data = conn.execute('SELECT priority, COUNT(*) as count FROM tasks WHERE user_id = ? GROUP BY priority ORDER BY count DESC', (user_id,)).fetchall()
+            data = conn.execute('''
+                SELECT priority, COUNT(*) as count 
+                FROM tasks WHERE user_id = ? 
+                GROUP BY priority
+            ''', (user_id,)).fetchall()
             conn.close()
+            
             return [{'priority': row['priority'], 'count': row['count']} for row in data]
         else:
+            # ゲストモード
             guest_tasks = session.get('guest_tasks', [])
-            if not guest_tasks:
-                return []
-            
             priority_counts = {}
             for task in guest_tasks:
                 priority = task.get('priority', 'medium')
                 priority_counts[priority] = priority_counts.get(priority, 0) + 1
             
-            return [{'priority': k, 'count': v} for k, v in priority_counts.items()]
+            return [{'priority': pri, 'count': count} 
+                   for pri, count in priority_counts.items()]
+        
     except Exception as e:
-        print(f"Error getting priority data: {e}")
+        print(f"Priority data error: {e}")
         return []
 
 def get_completion_data(user_id):
@@ -754,16 +756,18 @@ def get_completion_data(user_id):
             incomplete = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ? AND completed = 0', (user_id,)).fetchone()[0]
             conn.close()
         else:
+            # ゲストモード
             guest_tasks = session.get('guest_tasks', [])
             completed = sum(1 for task in guest_tasks if task.get('completed'))
             incomplete = len(guest_tasks) - completed
         
-        if completed == 0 and incomplete == 0:
-            return []
+        return [
+            {'name': 'Completed', 'count': completed, 'color': '#28a745'},
+            {'name': 'Incomplete', 'count': incomplete, 'color': '#ffc107'}
+        ]
         
-        return [{'name': '完了', 'count': completed, 'color': '#28a745'}, {'name': '未完了', 'count': incomplete, 'color': '#ffc107'}]
     except Exception as e:
-        print(f"Error getting completion data: {e}")
+        print(f"Completion data error: {e}")
         return []
 
 def create_pie_chart(data, title):

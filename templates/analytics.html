@@ -268,9 +268,10 @@
                     </div>
                     <div class="card-body">
                         <p>タスクデータと統計情報をJSON形式でダウンロードできます。</p>
-                        <a href="{{ url_for('export_stats') }}" class="btn btn-success" download="task_stats.json">
+                        <!-- export_stats ルートを削除して、代替案を提供 -->
+                        <button class="btn btn-success" onclick="downloadStats()">
                             <i class="bi bi-download"></i> 統計データをダウンロード
-                        </a>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -300,14 +301,11 @@
                     if (!response.ok) {
                         throw new Error('Network response was not ok');
                     }
-                    return response.text();
+                    return response.blob();
                 })
-                .then(imageData => {
-                    if (imageData && imageData.startsWith('data:image')) {
-                        chartDisplay.innerHTML = `<img src="${imageData}" class="img-fluid" alt="Chart" style="max-width: 100%; height: auto;">`;
-                    } else {
-                        throw new Error('Invalid image data');
-                    }
+                .then(blob => {
+                    const imageUrl = URL.createObjectURL(blob);
+                    chartDisplay.innerHTML = `<img src="${imageUrl}" class="img-fluid" alt="Chart" style="max-width: 100%; height: auto;">`;
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -318,6 +316,29 @@
                         </div>
                     `;
                 });
+        }
+        
+        // 統計データダウンロード機能
+        function downloadStats() {
+            const stats = {
+                total_tasks: {{ total_tasks }},
+                completed_tasks: {{ completed_tasks }},
+                incomplete_tasks: {{ incomplete_tasks }},
+                category_stats: {{ category_stats|tojson }},
+                priority_stats: {{ priority_stats|tojson }},
+                exported_at: new Date().toISOString()
+            };
+            
+            const dataStr = JSON.stringify(stats, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'task_stats.json';
+            link.click();
+            
+            URL.revokeObjectURL(url);
         }
         
         // ボタンのアクティブ状態管理
