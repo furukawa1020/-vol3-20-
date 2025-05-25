@@ -7,21 +7,31 @@ from collections import defaultdict
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
-# matplotlib関連を完全にコメントアウト
-# import matplotlib
-# matplotlib.use('Agg')
-# import matplotlib.pyplot as plt
-# import matplotlib.font_manager as fm
+# matplotlib設定（Render対応）
+import matplotlib
+matplotlib.use('Agg')  # GUIバックエンドを無効化
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import io
 import base64
 
-# フォント設定を無効化
+# シンプルなフォント設定
 def setup_japanese_font():
-    """日本語フォントを設定（無効化）"""
-    return None
+    """日本語フォントを設定（Render対応）"""
+    try:
+        # Renderなどのクラウド環境では基本的にDejaVu Sansを使用
+        plt.rcParams['font.family'] = ['DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
+        print("Font configured: DejaVu Sans")
+        return True
+        
+    except Exception as e:
+        print(f"Font setup error: {e}")
+        plt.rcParams['font.family'] = ['DejaVu Sans']
+        return False
 
 # フォント設定を実行
-font_prop = setup_japanese_font()
+font_configured = setup_japanese_font()
 
 app = Flask(__name__)
 
@@ -325,37 +335,399 @@ def index():
         traceback.print_exc()
         return f"Index page error: {str(e)}", 500
 
-# チャート生成を無効化
+# チャート生成機能を復活
 @app.route('/chart/<chart_type>')
 @login_required
 def generate_chart(chart_type):
     try:
-        return jsonify({
-            "error": "Chart generation temporarily disabled", 
-            "chart_type": chart_type
-        }), 503
+        print(f"Generating chart: {chart_type}")
+        user_id = get_current_user_id()
+        
+        if chart_type == 'category_pie':
+            data = get_category_data(user_id)
+            if not data:
+                return create_no_data_response("No category data available")
+            image_data = create_pie_chart(data, "Task Distribution by Category")
+            
+        elif chart_type == 'priority_bar':
+            data = get_priority_data(user_id)
+            if not data:
+                return create_no_data_response("No priority data available")
+            image_data = create_bar_chart(data, "Task Distribution by Priority")
+            
+        elif chart_type == 'completion_status':
+            data = get_completion_data(user_id)
+            if not data:
+                return create_no_data_response("No completion data available")
+            image_data = create_pie_chart(data, "Task Completion Status")
+            
+        elif chart_type == 'category_stacked':
+            data = get_category_detailed_data(user_id)
+            if not data:
+                return create_no_data_response("No detailed category data available")
+            image_data = create_stacked_bar_chart(data, "Detailed Category Statistics")
+            
+        else:
+            return create_no_data_response("Invalid chart type")
+        
+        if not image_data:
+            return create_no_data_response("Chart generation failed")
+            
+        return Response(image_data, mimetype='image/png')
         
     except Exception as e:
         print(f"Chart generation error: {e}")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return create_no_data_response(f"Chart error: {str(e)}")
 
-# matplotlib関連の関数を無効化
+def get_category_data(user_id):
+    """カテゴリ別データを取得"""
+    try:
+        if user_id:
+            conn = get_db_connection()
+            data = conn.execute('''
+                SELECT c.name, c.color, COUNT(t.id) as count 
+                FROM categories c 
+                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? 
+                WHERE c.user_id IS NULL OR c.user_id = ? 
+                GROUP BY c.id, c.name, c.color 
+                HAVING COUNT(t.id) > 0
+                ORDER BY COUNT(t.id) DESC
+            ''', (user_id, user_id)).fetchall()
+            conn.close()
+            
+            return [{'name': row['name'], 'count': row['count'], 'color': row['color']} for row in data]
+        else:
+            # ゲストモード
+            guest_tasks = session.get('guest_tasks', [])
+            if not guest_tasks:
+                return []
+            
+            category_counts = {}
+            for task in guest_tasks:
+                category = task.get('category', 'Uncategorized')
+                category_counts[category] = category_counts.get(category, 0) + 1
+            
+            return [{'name': cat, 'count': count, 'color': '#6c757d'} 
+                   for cat, count in category_counts.items()]
+        
+    except Exception as e:
+        print(f"Error getting category data: {e}")
+        return []
+
+def get_priority_data(user_id):
+    """優先度別データを取得"""
+    try:
+        if user_id:
+            conn = get_db_connection()
+            data = conn.execute('''
+                SELECT priority, COUNT(*) as count 
+                FROM tasks WHERE user_id = ? 
+                GROUP BY priority
+                ORDER BY count DESC
+            ''', (user_id,)).fetchall()
+            conn.close()
+            
+            return [{'priority': row['priority'], 'count': row['count']} for row in data]
+        else:
+            # ゲストモード
+            guest_tasks = session.get('guest_tasks', [])
+            if not guest_tasks:
+                return []
+            
+            priority_counts = {}
+            for task in guest_tasks:
+                priority = task.get('priority', 'medium')
+                priority_counts[priority] = priority_counts.get(priority, 0) + 1
+            
+            return [{'priority': pri, 'count': count} 
+                   for pri, count in priority_counts.items()]
+        
+    except Exception as e:
+        print(f"Error getting priority data: {e}")
+        return []
+
+def get_completion_data(user_id):
+    """完了状況データを取得"""
+    try:
+        if user_id:
+            conn = get_db_connection()
+            completed = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ? AND completed = 1', (user_id,)).fetchone()[0]
+            incomplete = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ? AND completed = 0', (user_id,)).fetchone()[0]
+            conn.close()
+        else:
+            # ゲストモード
+            guest_tasks = session.get('guest_tasks', [])
+            completed = sum(1 for task in guest_tasks if task.get('completed'))
+            incomplete = len(guest_tasks) - completed
+        
+        if completed == 0 and incomplete == 0:
+            return []
+        
+        return [
+            {'name': 'Completed', 'count': completed, 'color': '#28a745'},
+            {'name': 'Incomplete', 'count': incomplete, 'color': '#ffc107'}
+        ]
+        
+    except Exception as e:
+        print(f"Error getting completion data: {e}")
+        return []
+
+def get_category_detailed_data(user_id):
+    """カテゴリ別詳細データを取得"""
+    try:
+        if user_id:
+            conn = get_db_connection()
+            data = conn.execute('''
+                SELECT c.name, c.color,
+                       SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed,
+                       SUM(CASE WHEN t.completed = 0 THEN 1 ELSE 0 END) as incomplete
+                FROM categories c
+                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
+                WHERE (c.user_id IS NULL OR c.user_id = ?)
+                GROUP BY c.id, c.name, c.color
+                HAVING (completed > 0 OR incomplete > 0)
+                ORDER BY (completed + incomplete) DESC
+            ''', (user_id, user_id)).fetchall()
+            conn.close()
+            
+            return [{'name': row['name'], 'completed': row['completed'], 
+                    'incomplete': row['incomplete'], 'color': row['color']} for row in data]
+        else:
+            guest_tasks = session.get('guest_tasks', [])
+            if not guest_tasks:
+                return []
+            
+            category_stats = {}
+            for task in guest_tasks:
+                category = task.get('category', 'Uncategorized')
+                if category not in category_stats:
+                    category_stats[category] = {'completed': 0, 'incomplete': 0, 'color': '#6c757d'}
+                
+                if task.get('completed'):
+                    category_stats[category]['completed'] += 1
+                else:
+                    category_stats[category]['incomplete'] += 1
+            
+            return [{'name': k, 'completed': v['completed'], 'incomplete': v['incomplete'], 'color': v['color']} 
+                   for k, v in category_stats.items()]
+    except Exception as e:
+        print(f"Error getting category detailed data: {e}")
+        return []
+
 def create_pie_chart(data, title):
-    return b''
+    """円グラフを作成"""
+    try:
+        print(f"Creating pie chart with {len(data)} items")
+        
+        filtered_data = [item for item in data if item['count'] > 0]
+        if not filtered_data:
+            return create_no_data_image(title)
+        
+        labels = [item['name'] for item in filtered_data]
+        sizes = [item['count'] for item in filtered_data]
+        colors = [item.get('color', '#6c757d') for item in filtered_data]
+        
+        # 英語ラベルに変換（日本語フォント対応なしのため）
+        english_labels = [f"Item {i+1}" for i in range(len(labels))]
+        
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        wedges, texts, autotexts = ax.pie(sizes, labels=english_labels, colors=colors, 
+                                        autopct='%1.1f%%', startangle=90, 
+                                        textprops={'fontsize': 10})
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+        
+        plt.tight_layout()
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
+        img.seek(0)
+        image_data = img.getvalue()
+        plt.close()
+        
+        print("Pie chart created successfully")
+        return image_data
+        
+    except Exception as e:
+        print(f"Pie chart generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        return create_simple_error_image()
 
 def create_bar_chart(data, title):
-    return b''
+    """棒グラフを作成"""
+    try:
+        print(f"Creating bar chart with {len(data)} items")
+        
+        if not data:
+            return create_no_data_image(title)
+        
+        labels = [item['priority'] for item in data]
+        values = [item['count'] for item in data]
+        
+        # 英語ラベルに変換
+        english_labels = []
+        colors = []
+        for label in labels:
+            if label == 'high':
+                english_labels.append('High')
+                colors.append('#dc3545')
+            elif label == 'medium':
+                english_labels.append('Medium')
+                colors.append('#ffc107')
+            elif label == 'low':
+                english_labels.append('Low')
+                colors.append('#17a2b8')
+            else:
+                english_labels.append(label)
+                colors.append('#6c757d')
+        
+        fig, ax = plt.subplots(figsize=(8, 6))
+        bars = ax.bar(english_labels, values, color=colors)
+        
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        ax.set_xlabel('Priority', fontsize=12)
+        ax.set_ylabel('Number of Tasks', fontsize=12)
+        
+        # バーの上に値を表示
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1, 
+                   f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+        
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
+        img.seek(0)
+        image_data = img.getvalue()
+        plt.close()
+        
+        print("Bar chart created successfully")
+        return image_data
+        
+    except Exception as e:
+        print(f"Bar chart generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        return create_simple_error_image()
 
-def create_simple_error_image():
-    return b''
+def create_stacked_bar_chart(data, title):
+    """積み上げ棒グラフを作成"""
+    try:
+        print(f"Creating stacked bar chart with {len(data)} items")
+        
+        if not data:
+            return create_no_data_image(title)
+        
+        categories = [item['name'] for item in data]
+        completed = [item['completed'] for item in data]
+        incomplete = [item['incomplete'] for item in data]
+        
+        # 英語ラベルに変換
+        english_categories = [f"Cat{i+1}" for i in range(len(categories))]
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        x = range(len(english_categories))
+        width = 0.6
+        
+        # 積み上げ棒グラフ
+        bars1 = ax.bar(x, completed, width, label='Completed', color='#28a745')
+        bars2 = ax.bar(x, incomplete, width, bottom=completed, label='Incomplete', color='#ffc107')
+        
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        ax.set_xlabel('Category', fontsize=12)
+        ax.set_ylabel('Number of Tasks', fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(english_categories, rotation=45, ha='right')
+        ax.legend()
+        
+        # 各セクションにラベルを表示
+        for i, (comp, incomp) in enumerate(zip(completed, incomplete)):
+            # 合計値をバーの上に表示
+            total = comp + incomp
+            if total > 0:
+                ax.text(i, total + 0.1, str(total), ha='center', va='bottom', fontweight='bold')
+        
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
+        img.seek(0)
+        image_data = img.getvalue()
+        plt.close()
+        
+        print("Stacked bar chart created successfully")
+        return image_data
+        
+    except Exception as e:
+        print(f"Stacked bar chart generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        return create_simple_error_image()
 
 def create_no_data_image(title):
-    return b''
+    """データがない場合の画像を生成"""
+    try:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        
+        ax.text(0.5, 0.5, 'No Data Available', 
+               horizontalalignment='center', verticalalignment='center', 
+               transform=ax.transAxes, fontsize=16, color='gray')
+        ax.set_title(title, fontsize=14)
+        
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
+        img.seek(0)
+        image_data = img.getvalue()
+        plt.close()
+        
+        return image_data
+    except Exception as e:
+        print(f"Error creating no-data image: {e}")
+        return create_simple_error_image()
+
+def create_simple_error_image():
+    """シンプルなエラー画像を生成"""
+    try:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.text(0.5, 0.5, 'Chart Generation Error', 
+               horizontalalignment='center', verticalalignment='center', 
+               transform=ax.transAxes, fontsize=14, color='red')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
+        img.seek(0)
+        image_data = img.getvalue()
+        plt.close()
+        
+        return image_data
+    except:
+        # 最終的なフォールバック：空のバイナリ
+        return b''
 
 def create_no_data_response(message):
-    return jsonify({"error": message}), 404
+    """データがない場合のレスポンスを作成"""
+    image_data = create_no_data_image(message)
+    return Response(image_data, mimetype='image/png')
 
-# edit_task ルートを追加（index.htmlで参照されている）
+# デフォルトルート
 @app.route('/edit/<int:id>')
 @login_required
 def edit_task(id):
@@ -842,7 +1214,7 @@ def add_category():
                 flash('カテゴリを追加しました。', 'success')
             except sqlite3.IntegrityError:
                 conn.close()
-                flash('同じ名前のカテゴリが既に存在します。', 'error')
+                flash('同じ名前のカテゴリは既に存在します。', 'error')
     
     except Exception as e:
         print(f"Add category error: {e}")
