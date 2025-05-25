@@ -300,6 +300,85 @@ def add_task():
     
     return render_template('add_task.html', categories=categories)
 
+@app.route('/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_task(id):
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        task = conn.execute('SELECT * FROM tasks WHERE id = ? AND user_id = ?', (id, user_id)).fetchone()
+        
+        if task is None:
+            conn.close()
+            flash('Task not found!', 'error')
+            return redirect(url_for('index'))
+        
+        if request.method == 'POST':
+            title = request.form['title']
+            description = request.form.get('description', '')
+            due_date = request.form.get('due_date', '')
+            due_time = request.form.get('due_time', '')
+            category_id = request.form.get('category_id', '')
+            priority = request.form.get('priority', 'medium')
+            
+            category_name = ''
+            if category_id:
+                cat = conn.execute('SELECT name FROM categories WHERE id = ?', (category_id,)).fetchone()
+                category_name = cat['name'] if cat else ''
+            
+            conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, due_time = ?, category = ?, category_id = ?, priority = ? WHERE id = ? AND user_id = ?', (title, description, due_date, due_time, category_name, category_id, priority, id, user_id))
+            conn.commit()
+            conn.close()
+            
+            flash('Task updated successfully!', 'success')
+            return redirect(url_for('index'))
+        
+        categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC', (user_id,)).fetchall()
+        conn.close()
+    else:
+        guest_tasks = session.get('guest_tasks', [])
+        task = next((t for t in guest_tasks if t['id'] == id), None)
+        
+        if task is None:
+            flash('Task not found!', 'error')
+            return redirect(url_for('index'))
+        
+        conn = get_db_connection()
+        db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
+        conn.close()
+        
+        categories = list(db_categories)
+        categories.extend(session.get('guest_categories', []))
+        
+        if request.method == 'POST':
+            title = request.form['title']
+            description = request.form.get('description', '')
+            due_date = request.form.get('due_date', '')
+            due_time = request.form.get('due_time', '')
+            category_id = request.form.get('category_id', '')
+            priority = request.form.get('priority', 'medium')
+            
+            category_name = ''
+            if category_id:
+                for cat in categories:
+                    if str(cat['id']) == str(category_id):
+                        category_name = cat['name']
+                        break
+            
+            guest_tasks = session['guest_tasks'].copy()
+            for i, t in enumerate(guest_tasks):
+                if t['id'] == id:
+                    guest_tasks[i].update({'title': title, 'description': description, 'due_date': due_date, 'due_time': due_time, 'category': category_name, 'category_id': int(category_id) if category_id else None, 'priority': priority})
+                    break
+            
+            session['guest_tasks'] = guest_tasks
+            session.modified = True
+            flash('Task updated successfully!', 'success')
+            return redirect(url_for('index'))
+    
+    return render_template('edit_task.html', task=task, categories=categories)
+
 @app.route('/complete/<int:id>')
 @login_required
 def complete_task(id):
@@ -329,6 +408,35 @@ def complete_task(id):
                 status_text = "completed" if task['completed'] else "pending"
                 flash(f'Task marked as {status_text}!', 'success')
                 break
+        else:
+            flash('Task not found!', 'error')
+    
+    return redirect(url_for('index'))
+
+@app.route('/delete/<int:id>')
+@login_required
+def delete_task(id):
+    user_id = get_current_user_id()
+    
+    if user_id:
+        conn = get_db_connection()
+        result = conn.execute('DELETE FROM tasks WHERE id = ? AND user_id = ?', (id, user_id))
+        
+        if result.rowcount > 0:
+            conn.commit()
+            flash('Task deleted successfully!', 'success')
+        else:
+            flash('Task not found!', 'error')
+        
+        conn.close()
+    else:
+        guest_tasks = session.get('guest_tasks', [])
+        original_length = len(guest_tasks)
+        session['guest_tasks'] = [task for task in guest_tasks if task['id'] != id]
+        
+        if len(session['guest_tasks']) < original_length:
+            session.modified = True
+            flash('Task deleted successfully!', 'success')
         else:
             flash('Task not found!', 'error')
     
@@ -420,6 +528,35 @@ def add_category():
     except Exception as e:
         print(f"Add category error: {e}")
         flash(f'Failed to add category: {str(e)}', 'error')
+    
+    return redirect(url_for('categories'))
+
+@app.route('/delete_category/<int:category_id>', methods=['POST'])
+@login_required
+def delete_category(category_id):
+    try:
+        if 'guest_mode' in session:
+            guest_categories = session.get('guest_categories', [])
+            session['guest_categories'] = [cat for cat in guest_categories if cat['id'] != category_id]
+            session.modified = True
+            flash('Category deleted (guest mode).', 'success')
+        else:
+            conn = get_db_connection()
+            user_id = session.get('user_id')
+            
+            result = conn.execute('DELETE FROM categories WHERE id = ? AND user_id = ?', (category_id, user_id))
+            
+            if result.rowcount > 0:
+                conn.commit()
+                flash('Category deleted successfully.', 'success')
+            else:
+                flash('Cannot delete. Default categories or other users categories cannot be deleted.', 'error')
+            
+            conn.close()
+    
+    except Exception as e:
+        print(f"Delete category error: {e}")
+        flash(f'Failed to delete category: {str(e)}', 'error')
     
     return redirect(url_for('categories'))
 
