@@ -253,6 +253,42 @@
         .task-card {
             position: relative;
         }
+        
+        /* 期限表示用のスタイル */
+        .deadline-display {
+            font-size: 0.9rem;
+            padding: 0.25rem 0.5rem;
+            background-color: #e3f2fd;
+            border-radius: 0.25rem;
+            border-left: 3px solid #2196f3;
+            transition: all 0.3s ease;
+        }
+
+        /* 作業タイマー用のスタイル */
+        .work-timer {
+            font-size: 0.9rem;
+            padding: 0.25rem 0.5rem;
+            background-color: #e8f5e8;
+            border-radius: 0.25rem;
+            border-left: 3px solid #28a745;
+            transition: all 0.3s ease;
+        }
+
+        .work-timer.paused {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+        }
+
+        .work-timer.active {
+            background-color: #d1ecf1;
+            border-left-color: #17a2b8;
+            animation: work-pulse 2s infinite ease-in-out;
+        }
+
+        @keyframes work-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
         </style>
 </head>
 <body>
@@ -366,35 +402,42 @@
 
                                 <!-- 実働時間機能の追加 -->
                                 {% if not task['completed'] %}
-                                <!-- 自動期限タイマー表示 -->
+                                <!-- 期限表示（常に表示） -->
                                 {% if task['due_date'] and task['due_time'] %}
-                                <div class="countdown mt-2"
+                                <div class="deadline-display mt-2"
                                      data-task-id="{{ task['id'] }}"
                                      data-due-date="{{ task['due_date'] }}"
                                      data-due-time="{{ task['due_time'] }}">
-                                    ⏳ 期限まで計算中...
+                                    📅 期限まで計算中...
                                 </div>
                                 {% elif task['due_date'] %}
-                                <div class="countdown mt-2"
+                                <div class="deadline-display mt-2"
                                      data-task-id="{{ task['id'] }}"
                                      data-due-date="{{ task['due_date'] }}"
                                      data-due-time="23:59">
-                                    ⏳ 期限まで計算中...
+                                    📅 期限まで計算中...
                                 </div>
                                 {% else %}
-                                <div class="countdown mt-2"
+                                <div class="deadline-display mt-2"
                                      data-task-id="{{ task['id'] }}"
                                      data-estimated-hours="{{ task.get('estimated_hours', 2) }}">
-                                    ⏳ 予想作業時間: {{ task.get('estimated_hours', 2) }}時間
+                                    📋 予想作業時間: {{ task.get('estimated_hours', 2) }}時間
                                 </div>
                                 {% endif %}
 
+                                <!-- 作業タイマー（スタート後のみ表示） -->
+                                <div class="work-timer mt-2" 
+                                     data-task-id="{{ task['id'] }}"
+                                     style="display:none;">
+                                    ⏱️ 作業時間: 0分0秒
+                                </div>
+
                                 <div class="btn-group mt-2 mb-2 timer-controls" role="group">
-                                    <button class="btn btn-warning btn-sm" onclick="pauseTask({{ task['id'] }})">
-                                        <i class="bi bi-pause"></i> 一時停止
+                                    <button class="btn btn-success btn-sm" onclick="startTask({{ task['id'] }})">
+                                        <i class="bi bi-play"></i> スタート
                                     </button>
-                                    <button class="btn btn-success btn-sm" style="display:none;" onclick="startTask({{ task['id'] }})">
-                                        <i class="bi bi-play"></i> 再開
+                                    <button class="btn btn-warning btn-sm" style="display:none;" onclick="pauseTask({{ task['id'] }})">
+                                        <i class="bi bi-pause"></i> 一時停止
                                     </button>
                                     <button class="btn btn-info btn-sm show-focus" style="display:none;" onclick="showFocusTime({{ task['id'] }})">
                                         <i class="bi bi-clock-history"></i> 実働時間
@@ -491,66 +534,18 @@
         // 実働時間管理用のタイマー
         const timers = {};
 
-        // 統合された期限タイマー機能の初期化
+        // 統合された期限・作業タイマー機能の初期化
         document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('.countdown').forEach(function(el) {
+            // 期限表示の初期化
+            document.querySelectorAll('.deadline-display').forEach(function(el) {
                 const taskId = parseInt(el.getAttribute('data-task-id'));
-                const dueDate = el.getAttribute('data-due-date');
-                const dueTime = el.getAttribute('data-due-time');
-                const estimatedHours = parseFloat(el.getAttribute('data-estimated-hours'));
-                
-                if (isNaN(taskId)) return;
+                initDeadlineDisplay(taskId);
+            });
 
-                const card = document.querySelector(`.card[data-task-id='${taskId}']`);
-                if (!card) return;
-                
-                const controls = card.querySelector('.timer-controls');
-                if (!controls) return;
-                
-                const resumeBtn = controls.querySelector('.btn-success');
-                const focusBtn = controls.querySelector('.show-focus');
-                const pauseBtn = controls.querySelector('.btn-warning');
-
-                let deadlineTime = null;
-                let isDeadlineMode = false;
-
-                // 期限が設定されている場合は期限まで、そうでなければ予想作業時間
-                if (dueDate && dueTime) {
-                    deadlineTime = new Date(`${dueDate}T${dueTime}`).getTime();
-                    isDeadlineMode = true;
-                } else if (dueDate) {
-                    deadlineTime = new Date(`${dueDate}T23:59`).getTime();
-                    isDeadlineMode = true;
-                } else if (estimatedHours) {
-                    // 予想作業時間モード（従来通り）
-                    deadlineTime = Date.now() + (estimatedHours * 3600 * 1000);
-                    isDeadlineMode = false;
-                }
-
-                if (!deadlineTime) return;
-
-                timers[taskId] = {
-                    element: el,
-                    deadlineTime: deadlineTime,
-                    isDeadlineMode: isDeadlineMode,
-                    interval: setInterval(() => updateCountdownWithUrgency(taskId), 1000),
-                    isFocused: true,
-                    focusTime: 0,
-                    sessionStartTime: Date.now(),
-                    lastFocusStart: Date.now(),
-                    interruptionStart: null,
-                    totalInterrupted: 0,
-                    editButtons: card.querySelectorAll('.action-buttons a'),
-                    card: card,
-                    pauseBtn: pauseBtn,
-                    resumeBtn: resumeBtn,
-                    focusBtn: focusBtn,
-                    sessionStarted: false
-                };
-
-                // 作業セッションを開始
-                startWorkSession(taskId);
-                updateCountdownWithUrgency(taskId);
+            // 作業タイマーの初期化
+            document.querySelectorAll('.work-timer').forEach(function(el) {
+                const taskId = parseInt(el.getAttribute('data-task-id'));
+                initWorkTimer(taskId);
             });
             
             // アナログ時計の初期化
@@ -561,55 +556,120 @@
             initTooltip();
         });
 
-        function updateCountdownWithUrgency(taskId) {
+        // 期限表示の初期化
+        function initDeadlineDisplay(taskId) {
+            const el = document.querySelector(`.deadline-display[data-task-id='${taskId}']`);
+            if (!el) return;
+
+            const dueDate = el.getAttribute('data-due-date');
+            const dueTime = el.getAttribute('data-due-time');
+            const estimatedHours = parseFloat(el.getAttribute('data-estimated-hours'));
+
+            let deadlineTime = null;
+            let isDeadlineMode = false;
+
+            if (dueDate && dueTime) {
+                deadlineTime = new Date(`${dueDate}T${dueTime}`).getTime();
+                isDeadlineMode = true;
+            } else if (dueDate) {
+                deadlineTime = new Date(`${dueDate}T23:59`).getTime();
+                isDeadlineMode = true;
+            }
+
+            if (!timers[taskId]) {
+                timers[taskId] = {};
+            }
+
+            timers[taskId].deadlineElement = el;
+            timers[taskId].deadlineTime = deadlineTime;
+            timers[taskId].isDeadlineMode = isDeadlineMode;
+            timers[taskId].estimatedHours = estimatedHours;
+            
+            // 期限表示更新のインターバル開始
+            timers[taskId].deadlineInterval = setInterval(() => updateDeadlineDisplay(taskId), 1000);
+            updateDeadlineDisplay(taskId);
+        }
+
+        // 作業タイマーの初期化
+        function initWorkTimer(taskId) {
+            const el = document.querySelector(`.work-timer[data-task-id='${taskId}']`);
+            const card = document.querySelector(`.card[data-task-id='${taskId}']`);
+            if (!el || !card) return;
+
+            const controls = card.querySelector('.timer-controls');
+            if (!controls) return;
+
+            const startBtn = controls.querySelector('.btn-success');
+            const pauseBtn = controls.querySelector('.btn-warning');
+            const focusBtn = controls.querySelector('.show-focus');
+
+            if (!timers[taskId]) {
+                timers[taskId] = {};
+            }
+
+            // 作業タイマー関連の初期化
+            timers[taskId].workElement = el;
+            timers[taskId].card = card;
+            timers[taskId].startBtn = startBtn;
+            timers[taskId].pauseBtn = pauseBtn;
+            timers[taskId].focusBtn = focusBtn;
+            timers[taskId].isStarted = false;
+            timers[taskId].isPaused = false;
+            timers[taskId].workSeconds = 0;
+            timers[taskId].focusTime = 0;
+            timers[taskId].totalInterrupted = 0;
+            timers[taskId].interruptionStart = null;
+            timers[taskId].sessionStarted = false;
+            timers[taskId].workInterval = null;
+        }
+
+        // 期限表示の更新
+        function updateDeadlineDisplay(taskId) {
             const timer = timers[taskId];
-            if (!timer) return;
-            
+            if (!timer || !timer.deadlineElement) return;
+
             const now = Date.now();
-            const remaining = timer.deadlineTime - now;
-            const remainingHours = remaining / (1000 * 60 * 60);
-            
-            // 緊急度レベルを決定（カテゴリ色を保持しつつグラデーション追加）
-            let urgencyClass = 'urgency-normal';
-            if (remaining <= 0) {
-                urgencyClass = 'urgency-overdue';
-            } else if (remainingHours <= 3) {
-                urgencyClass = 'urgency-emergency';
-            } else if (remainingHours <= 6) {
-                urgencyClass = 'urgency-critical';
-            } else if (remainingHours <= 12) {
-                urgencyClass = 'urgency-high';
-            } else if (remainingHours <= 24) {
-                urgencyClass = 'urgency-medium';
-            }
-            
-            // 既存の緊急度クラスを削除してから新しいクラスを追加
-            timer.card.className = timer.card.className.replace(/urgency-\w+/g, '');
-            timer.card.classList.add(urgencyClass);
-            
-            if (remaining <= 0) {
-                if (timer.isDeadlineMode) {
-                    timer.element.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i> <span class="text-danger fw-bold">期限切れ</span>';
-                } else {
-                    timer.element.innerHTML = '<i class="bi bi-alarm text-danger"></i> <span class="text-danger fw-bold">時間切れ</span>';
+
+            if (timer.isDeadlineMode && timer.deadlineTime) {
+                const remaining = timer.deadlineTime - now;
+                const remainingHours = remaining / (1000 * 60 * 60);
+                
+                // 緊急度レベルを決定してカードに適用
+                let urgencyClass = 'urgency-normal';
+                if (remaining <= 0) {
+                    urgencyClass = 'urgency-overdue';
+                } else if (remainingHours <= 3) {
+                    urgencyClass = 'urgency-emergency';
+                } else if (remainingHours <= 6) {
+                    urgencyClass = 'urgency-critical';
+                } else if (remainingHours <= 12) {
+                    urgencyClass = 'urgency-high';
+                } else if (remainingHours <= 24) {
+                    urgencyClass = 'urgency-medium';
                 }
-                timer.element.classList.add('text-danger');
-                clearInterval(timer.interval);
-                endWorkSession(taskId);
-                return;
-            }
+                
+                if (timer.card) {
+                    timer.card.className = timer.card.className.replace(/urgency-\w+/g, '');
+                    timer.card.classList.add(urgencyClass);
+                }
+                
+                if (remaining <= 0) {
+                    timer.deadlineElement.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i> <span class="text-danger fw-bold">期限切れ</span>';
+                    timer.deadlineElement.classList.add('text-danger');
+                    clearInterval(timer.deadlineInterval);
+                    return;
+                }
 
-            const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+                const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
 
-            let displayText = '';
-            let iconClass = 'bi-hourglass-split';
-            let textClass = '';
+                let displayText = '';
+                let iconClass = 'bi-calendar';
+                let textClass = '';
 
-            if (timer.isDeadlineMode) {
-                // 期限モード - 緊急度に応じてアイコンと色を変更
+                // 緊急度に応じてアイコンと色を変更
                 if (remainingHours <= 3) {
                     iconClass = 'bi-exclamation-triangle';
                     textClass = 'text-danger fw-bold';
@@ -631,92 +691,82 @@
                 } else {
                     displayText = `期限まで: ${minutes}分 ${seconds}秒`;
                 }
+
+                timer.deadlineElement.innerHTML = `<i class="${iconClass} ${textClass}"></i> <span class="${textClass}">${displayText}</span>`;
             } else {
                 // 予想作業時間モード
-                if (hours > 0) {
-                    displayText = `残り: ${hours}時間 ${minutes}分 ${seconds}秒`;
-                } else {
-                    displayText = `残り: ${minutes}分 ${seconds}秒`;
-                    if (minutes <= 10) {
-                        textClass = 'text-warning';
-                        iconClass = 'bi-clock';
-                    }
-                    if (minutes <= 5) {
-                        textClass = 'text-danger';
-                        iconClass = 'bi-alarm';
-                    }
-                }
+                timer.deadlineElement.innerHTML = `<i class="bi bi-clock-history"></i> 予想作業時間: ${timer.estimatedHours || 2}時間`;
             }
+        }
 
-            timer.element.innerHTML = `<i class="${iconClass} ${textClass}"></i> <span class="${textClass}">${displayText}</span>`;
-            
-            // 実働時間も更新
-            if (timer.isFocused) {
+        // 作業タイマーの更新
+        function updateWorkTimer(taskId) {
+            const timer = timers[taskId];
+            if (!timer || !timer.workElement || !timer.isStarted) return;
+
+            if (!timer.isPaused) {
+                timer.workSeconds++;
                 timer.focusTime++;
             }
-        }
 
-        async function startWorkSession(taskId) {
-            try {
-                const response = await fetch('/api/work_session/start', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ task_id: taskId })
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (timers[taskId]) {
-                        timers[taskId].sessionStarted = true;
-                    }
-                    console.log('Work session started:', data);
-                }
-            } catch (error) {
-                console.error('Error starting work session:', error);
+            const hours = Math.floor(timer.workSeconds / 3600);
+            const minutes = Math.floor((timer.workSeconds % 3600) / 60);
+            const seconds = timer.workSeconds % 60;
+
+            let displayText = '';
+            let statusIcon = '';
+
+            if (timer.isPaused) {
+                statusIcon = '⏸️';
+                timer.workElement.className = 'work-timer mt-2 paused';
+            } else {
+                statusIcon = '🟢';
+                timer.workElement.className = 'work-timer mt-2 active';
             }
-        }
 
-        async function pauseTask(taskId) {
-            const timer = timers[taskId];
-            if (!timer || !timer.sessionStarted) return;
-            
-            if (timer.isFocused) {
-                timer.isFocused = false;
-                timer.interruptionStart = Date.now();
-                timer.card.classList.add('paused-task');
-                timer.pauseBtn.style.display = 'none';
-                timer.resumeBtn.style.display = 'inline-block';
-                timer.focusBtn.style.display = 'inline-block';
-
-                // API呼び出し
-                try {
-                    const response = await fetch('/api/work_session/pause', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            task_id: taskId,
-                            focus_seconds: timer.focusTime
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        console.log('Work session paused');
-                    }
-                } catch (error) {
-                    console.error('Error pausing work session:', error);
-                }
+            if (hours > 0) {
+                displayText = `${statusIcon} 作業時間: ${hours}時間${minutes}分${seconds}秒`;
+            } else if (minutes > 0) {
+                displayText = `${statusIcon} 作業時間: ${minutes}分${seconds}秒`;
+            } else {
+                displayText = `${statusIcon} 作業時間: ${seconds}秒`;
             }
+
+            timer.workElement.innerHTML = displayText;
         }
 
+        // タスク開始関数
         async function startTask(taskId) {
             const timer = timers[taskId];
-            if (!timer || !timer.sessionStarted) return;
+            if (!timer) return;
             
-            if (!timer.isFocused) {
+            if (!timer.isStarted) {
+                // 初回スタート
+                timer.isStarted = true;
+                timer.isPaused = false;
+                timer.sessionStartTime = Date.now();
+                
+                // 作業タイマーを表示
+                timer.workElement.style.display = 'block';
+                
+                // 作業タイマーのインターバル開始
+                timer.workInterval = setInterval(() => updateWorkTimer(taskId), 1000);
+                
+                // ボタンの表示を切り替え
+                timer.startBtn.style.display = 'none';
+                timer.pauseBtn.style.display = 'inline-block';
+                timer.focusBtn.style.display = 'inline-block';
+                
+                // 作業セッションを開始
+                await startWorkSession(taskId);
+                
+                timer.startBtn.innerHTML = '<i class="bi bi-play"></i> 再開';
+                updateWorkTimer(taskId);
+                
+            } else if (timer.isPaused) {
+                // 再開
+                timer.isPaused = false;
+                
                 let breakSeconds = 0;
                 if (timer.interruptionStart) {
                     breakSeconds = Math.floor((Date.now() - timer.interruptionStart) / 1000);
@@ -724,10 +774,8 @@
                     timer.interruptionStart = null;
                 }
 
-                timer.isFocused = true;
                 timer.card.classList.remove('paused-task');
-                timer.resumeBtn.style.display = 'none';
-                timer.focusBtn.style.display = 'none';
+                timer.startBtn.style.display = 'none';
                 timer.pauseBtn.style.display = 'inline-block';
 
                 // API呼び出し
@@ -752,6 +800,62 @@
             }
         }
 
+        // タスク一時停止関数
+        async function pauseTask(taskId) {
+            const timer = timers[taskId];
+            if (!timer || !timer.sessionStarted || timer.isPaused) return;
+            
+            timer.isPaused = true;
+            timer.interruptionStart = Date.now();
+            timer.card.classList.add('paused-task');
+            timer.pauseBtn.style.display = 'none';
+            timer.startBtn.style.display = 'inline-block';
+
+            // API呼び出し
+            try {
+                const response = await fetch('/api/work_session/pause', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId,
+                        focus_seconds: timer.focusTime
+                    })
+                });
+                
+                if (response.ok) {
+                    console.log('Work session paused');
+                }
+            } catch (error) {
+                console.error('Error pausing work session:', error);
+            }
+        }
+
+        // 作業セッション開始関数
+        async function startWorkSession(taskId) {
+            try {
+                const response = await fetch('/api/work_session/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ task_id: taskId })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (timers[taskId]) {
+                        timers[taskId].sessionStarted = true;
+                    }
+                    console.log('Work session started:', data);
+                }
+            } catch (error) {
+                console.error('Error starting work session:', error);
+            }
+        }
+
+        // 作業セッション終了関数
         async function endWorkSession(taskId) {
             const timer = timers[taskId];
             if (!timer || !timer.sessionStarted) return;
@@ -771,12 +875,18 @@
                 if (response.ok) {
                     console.log('Work session ended');
                     timer.sessionStarted = false;
+                    
+                    // タイマーを停止
+                    if (timer.workInterval) {
+                        clearInterval(timer.workInterval);
+                    }
                 }
             } catch (error) {
                 console.error('Error ending work session:', error);
             }
         }
 
+        // 実働時間統計表示関数
         async function showFocusTime(taskId) {
             try {
                 const response = await fetch(`/api/work_session/stats/${taskId}`);
@@ -798,14 +908,13 @@
                 // フォールバック：ローカルデータを表示
                 const timer = timers[taskId];
                 if (timer) {
-                    const ft = timer.focusTime;
-                    const h = Math.floor(ft / 3600);
-                    const m = Math.floor((ft % 3600) / 60);
-                    const s = ft % 60;
-                    const focusPercentage = timer.focusTime > 0 ? Math.round((timer.focusTime / (timer.focusTime + timer.totalInterrupted)) * 100) : 100;
+                    const h = Math.floor(timer.workSeconds / 3600);
+                    const m = Math.floor((timer.workSeconds % 3600) / 60);
+                    const s = timer.workSeconds % 60;
+                    const focusPercentage = timer.focusTime > 0 ? Math.round((timer.focusTime / timer.workSeconds) * 100) : 100;
                     
                     alert(`📊 実働時間統計（現在セッション）\n\n` +
-                          `⏰ 実働時間: ${h}時間 ${m}分 ${s}秒\n` +
+                          `⏰ 作業時間: ${h}時間 ${m}分 ${s}秒\n` +
                           `📈 集中度: ${focusPercentage}%`);
                 }
             }
