@@ -9,7 +9,7 @@ from functools import wraps
 
 # matplotlib設定を最初に行う
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg')  # GUIバックエンドを無効化
 
 # 日本語フォント設定
 import matplotlib.pyplot as plt
@@ -17,45 +17,18 @@ import matplotlib.font_manager as fm
 import io
 import base64
 
-# 日本語フォントの設定
+# 日本語フォントの設定を簡素化
 def setup_japanese_font():
     """日本語フォントを設定"""
     try:
-        # システムに応じたフォント設定
-        import platform
-        system = platform.system()
-        
-        if system == "Darwin":  # macOS
-            font_paths = [
-                "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
-                "/Library/Fonts/Arial Unicode MS.ttf"
-            ]
-        elif system == "Linux":  # Linux (Render等)
-            font_paths = [
-                "/usr/share/fonts/truetype/noto-cjk/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-            ]
-        elif system == "Windows":  # Windows
-            font_paths = [
-                "C:/Windows/Fonts/msgothic.ttc",
-                "C:/Windows/Fonts/arial.ttf"
-            ]
-        else:
-            font_paths = []
-        
-        for font_path in font_paths:
-            if os.path.exists(font_path):
-                font_prop = fm.FontProperties(fname=font_path)
-                plt.rcParams['font.family'] = font_prop.get_name()
-                return font_prop
-        
-        # フォールバック：DejaVu Sans
-        plt.rcParams['font.family'] = 'DejaVu Sans'
+        # Renderなどのクラウド環境では基本的にDejaVu Sansを使用
+        plt.rcParams['font.family'] = ['DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
         return None
         
     except Exception as e:
         print(f"Font setup error: {e}")
-        plt.rcParams['font.family'] = 'DejaVu Sans'
+        plt.rcParams['font.family'] = ['DejaVu Sans']
         return None
 
 # フォント設定を実行
@@ -584,9 +557,9 @@ def delete_category(category_id):
 @app.route('/analytics')
 @login_required
 def analytics():
-    user_id = get_current_user_id()
-    
     try:
+        user_id = get_current_user_id()
+        
         if user_id:
             conn = get_db_connection()
             
@@ -594,25 +567,52 @@ def analytics():
             completed_tasks = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ? AND completed = 1', (user_id,)).fetchone()[0]
             incomplete_tasks = total_tasks - completed_tasks
             
-            category_data = conn.execute('SELECT c.name, c.color, COUNT(t.id) as total, SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed FROM categories c LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? WHERE c.user_id IS NULL OR c.user_id = ? GROUP BY c.id, c.name, c.color HAVING COUNT(t.id) > 0 ORDER BY COUNT(t.id) DESC', (user_id, user_id)).fetchall()
+            category_data = conn.execute('''
+                SELECT c.name, c.color, COUNT(t.id) as total, 
+                       SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed 
+                FROM categories c 
+                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? 
+                WHERE c.user_id IS NULL OR c.user_id = ? 
+                GROUP BY c.id, c.name, c.color 
+                HAVING COUNT(t.id) > 0 
+                ORDER BY COUNT(t.id) DESC
+            ''', (user_id, user_id)).fetchall()
             
             category_stats = {}
             for cat in category_data:
-                category_stats[cat['name']] = {'total': cat['total'], 'completed': cat['completed'], 'color': cat['color']}
+                category_stats[cat['name']] = {
+                    'total': cat['total'], 
+                    'completed': cat['completed'], 
+                    'color': cat['color']
+                }
             
-            priority_data = conn.execute('SELECT priority, COUNT(*) as total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed FROM tasks WHERE user_id = ? GROUP BY priority', (user_id,)).fetchall()
+            priority_data = conn.execute('''
+                SELECT priority, COUNT(*) as total, 
+                       SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed 
+                FROM tasks WHERE user_id = ? 
+                GROUP BY priority
+            ''', (user_id,)).fetchall()
             
             priority_stats = {}
             for pri in priority_data:
-                priority_stats[pri['priority']] = {'total': pri['total'], 'completed': pri['completed']}
+                priority_stats[pri['priority']] = {
+                    'total': pri['total'], 
+                    'completed': pri['completed']
+                }
             
             conn.close()
+            
         else:
+            # ゲストモードの処理
             guest_tasks = session.get('guest_tasks', [])
             total_tasks = len(guest_tasks)
             completed_tasks = sum(1 for task in guest_tasks if task.get('completed'))
             incomplete_tasks = total_tasks - completed_tasks
             
+            category_stats = {}
+            priority_stats = {}
+            
+            # ゲストタスクからカテゴリ統計を計算
             category_counts = {}
             category_completed = {}
             for task in guest_tasks:
@@ -621,10 +621,14 @@ def analytics():
                 if task.get('completed'):
                     category_completed[category] = category_completed.get(category, 0) + 1
             
-            category_stats = {}
             for category, total in category_counts.items():
-                category_stats[category] = {'total': total, 'completed': category_completed.get(category, 0), 'color': '#6c757d'}
+                category_stats[category] = {
+                    'total': total, 
+                    'completed': category_completed.get(category, 0), 
+                    'color': '#6c757d'
+                }
             
+            # 優先度統計を計算
             priority_counts = {}
             priority_completed = {}
             for task in guest_tasks:
@@ -633,16 +637,31 @@ def analytics():
                 if task.get('completed'):
                     priority_completed[priority] = priority_completed.get(priority, 0) + 1
             
-            priority_stats = {}
             for priority, total in priority_counts.items():
-                priority_stats[priority] = {'total': total, 'completed': priority_completed.get(priority, 0)}
+                priority_stats[priority] = {
+                    'total': total, 
+                    'completed': priority_completed.get(priority, 0)
+                }
         
-        return render_template('analytics.html', total_tasks=total_tasks, completed_tasks=completed_tasks, incomplete_tasks=incomplete_tasks, category_stats=category_stats, priority_stats=priority_stats, is_guest='guest_mode' in session)
+        return render_template('analytics.html', 
+                             total_tasks=total_tasks, 
+                             completed_tasks=completed_tasks, 
+                             incomplete_tasks=incomplete_tasks, 
+                             category_stats=category_stats, 
+                             priority_stats=priority_stats, 
+                             is_guest='guest_mode' in session)
     
     except Exception as e:
         print(f"Analytics error: {e}")
-        flash(f'分析データの取得に失敗しました: {str(e)}', 'error')
-        return render_template('analytics.html', total_tasks=0, completed_tasks=0, incomplete_tasks=0, category_stats={}, priority_stats={}, is_guest='guest_mode' in session)
+        # エラーが発生した場合はデフォルト値で表示
+        return render_template('analytics.html', 
+                             total_tasks=0, 
+                             completed_tasks=0, 
+                             incomplete_tasks=0, 
+                             category_stats={}, 
+                             priority_stats={}, 
+                             is_guest='guest_mode' in session,
+                             error_message=f"データの読み込みに失敗しました: {str(e)}")
 
 # チャート生成エンドポイント
 @app.route('/chart/<chart_type>')
@@ -757,15 +776,13 @@ def create_pie_chart(data, title):
         sizes = [item['count'] for item in filtered_data]
         colors = [item.get('color', '#6c757d') for item in filtered_data]
         
-        fig, ax = plt.subplots(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(8, 6))
         
-        if font_prop:
-            wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, textprops={'fontproperties': font_prop, 'fontsize': 10})
-            ax.set_title(title, fontproperties=font_prop, fontsize=16, fontweight='bold', pad=20)
-        else:
-            english_labels = [f"Category {i+1}" for i in range(len(labels))]
-            wedges, texts, autotexts = ax.pie(sizes, labels=english_labels, colors=colors, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 10})
-            ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        # 日本語ではなく英語ラベルを使用（Render対応）
+        english_labels = [f"Category {i+1}" for i in range(len(labels))]
+        wedges, texts, autotexts = ax.pie(sizes, labels=english_labels, colors=colors, 
+                                        autopct='%1.1f%%', startangle=90, textprops={'fontsize': 10})
+        ax.set_title('Task Distribution by Category', fontsize=14, fontweight='bold', pad=20)
         
         for autotext in autotexts:
             autotext.set_color('white')
@@ -774,23 +791,36 @@ def create_pie_chart(data, title):
         plt.tight_layout()
         
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=150)
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
         img.seek(0)
         image_data = img.getvalue()
         plt.close()
         
         return image_data
+        
     except Exception as e:
         print(f"Pie chart generation error: {e}")
-        return create_no_data_image(title)
+        return create_simple_error_image()
 
 def create_bar_chart(data, title):
     try:
         if not data:
-            return create_no_data_image(title)
+            return create_simple_error_image()
         
         labels = [item['priority'] for item in data]
         values = [item['count'] for item in data]
+        
+        # 英語ラベルに変換
+        english_labels = []
+        for label in labels:
+            if label == 'high':
+                english_labels.append('High')
+            elif label == 'medium':
+                english_labels.append('Medium')
+            elif label == 'low':
+                english_labels.append('Low')
+            else:
+                english_labels.append(label)
         
         colors = []
         for label in labels:
@@ -803,35 +833,53 @@ def create_bar_chart(data, title):
             else:
                 colors.append('#6c757d')
         
-        fig, ax = plt.subplots(figsize=(10, 6))
-        bars = ax.bar(labels, values, color=colors)
+        fig, ax = plt.subplots(figsize=(8, 6))
+        bars = ax.bar(english_labels, values, color=colors)
         
-        if font_prop:
-            ax.set_title(title, fontproperties=font_prop, fontsize=16, fontweight='bold', pad=20)
-            ax.set_xlabel('優先度', fontproperties=font_prop, fontsize=12)
-            ax.set_ylabel('タスク数', fontproperties=font_prop, fontsize=12)
-        else:
-            ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
-            ax.set_xlabel('Priority', fontsize=12)
-            ax.set_ylabel('Number of Tasks', fontsize=12)
+        ax.set_title('Task Distribution by Priority', fontsize=14, fontweight='bold', pad=20)
+        ax.set_xlabel('Priority', fontsize=12)
+        ax.set_ylabel('Number of Tasks', fontsize=12)
         
         for bar in bars:
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1, f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1, 
+                   f'{int(height)}', ha='center', va='bottom', fontweight='bold')
         
         ax.grid(axis='y', linestyle='--', alpha=0.7)
         plt.tight_layout()
         
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=150)
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
         img.seek(0)
         image_data = img.getvalue()
         plt.close()
         
         return image_data
+        
     except Exception as e:
         print(f"Bar chart generation error: {e}")
-        return create_no_data_image(title)
+        return create_simple_error_image()
+
+def create_simple_error_image():
+    """シンプルなエラー画像を生成"""
+    try:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.text(0.5, 0.5, 'Chart Generation Error', 
+               horizontalalignment='center', verticalalignment='center', 
+               transform=ax.transAxes, fontsize=14, color='red')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=100)
+        img.seek(0)
+        image_data = img.getvalue()
+        plt.close()
+        
+        return image_data
+    except:
+        return b''
 
 def create_no_data_image(title):
     try:

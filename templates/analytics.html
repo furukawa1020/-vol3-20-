@@ -61,6 +61,14 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- エラーメッセージの表示 -->
+        {% if error_message %}
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            {{ error_message }}
+        </div>
+        {% endif %}
+        
         <div class="row">
             <div class="col-12">
                 <h1 class="mb-4">
@@ -314,15 +322,7 @@
         
         // ボタンのアクティブ状態管理
         document.querySelectorAll('.chart-btn').forEach(btn => {
-
-
-
-
-
-
-
-
-</html></body>    </script>        });            });                this.classList.add('active');                document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));            btn.addEventListener('click', function() {            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function() {
                 document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
             });
