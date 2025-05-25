@@ -289,6 +289,311 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.8; }
         }
+
+        /* レスポンシブデザイン - スマートフォン対応 */
+        @media (max-width: 768px) {
+            /* メインコンテナの調整 */
+            .container {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+            }
+
+            /* ナビゲーションバー調整 */
+            .navbar-nav {
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+            
+            .navbar-nav .nav-link {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.875rem;
+            }
+
+            /* タスクカード調整 */
+            .row.row-cols-1.row-cols-md-2 {
+                --bs-gutter-x: 0.75rem;
+            }
+            
+            .task-card {
+                margin-bottom: 1rem;
+            }
+
+            .card-body {
+                padding: 0.75rem;
+            }
+
+            .card-title {
+                font-size: 1rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .card-text {
+                font-size: 0.875rem;
+            }
+
+            /* タイマー関連の調整 */
+            .deadline-display,
+            .work-timer {
+                font-size: 0.8rem;
+                padding: 0.2rem 0.4rem;
+            }
+
+            .timer-controls {
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+
+            .timer-controls .btn {
+                font-size: 0.75rem;
+                padding: 0.25rem 0.5rem;
+            }
+
+            /* アクションボタン調整 */
+            .action-buttons {
+                display: flex;
+                gap: 0.25rem;
+            }
+
+            .action-buttons .btn {
+                padding: 0.25rem 0.4rem;
+                font-size: 0.75rem;
+            }
+
+            /* アナログ時計のレスポンシブ調整 */
+            #analogClock {
+                width: 200px !important;
+                height: 200px !important;
+                max-width: 90vw;
+                max-height: 90vw;
+            }
+
+            .legend {
+                padding: 8px;
+                margin-top: 10px;
+            }
+
+            .legend h6 {
+                font-size: 0.875rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .legend-item {
+                font-size: 0.75rem;
+                margin-bottom: 0.25rem;
+            }
+
+            .legend-marker {
+                width: 12px;
+                height: 12px;
+                margin-right: 6px;
+            }
+
+            /* モバイル専用レイアウト */
+            .row.flex-nowrap {
+                flex-direction: column !important;
+                align-items: stretch !important;
+            }
+
+            .divider-vertical {
+                display: none !important;
+            }
+
+            /* 右カラムを下に移動 */
+            .col-lg-3.col-md-4 {
+                order: 2;
+                margin-top: 1rem;
+            }
+
+            .col-lg-9.col-md-8 {
+                order: 1;
+            }
+
+            /* ゲストバナー調整 */
+            .guest-banner {
+                padding: 0.75rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .guest-banner h5 {
+                font-size: 1rem;
+            }
+
+            .guest-banner small {
+                font-size: 0.75rem;
+            }
+
+            /* 新規タスクボタン調整 */
+            .row.mb-4 {
+                margin-bottom: 1rem !important;
+            }
+
+            .row.mb-4 h1 {
+                font-size: 1.5rem;
+            }
+
+            /* タスクがない場合のアラート調整 */
+            .alert {
+                padding: 0.75rem;
+            }
+
+            .alert h4 {
+                font-size: 1.1rem;
+            }
+
+            /* フォームチェック調整 */
+            .form-check-input {
+                transform: scale(1.2);
+            }
+
+            /* バッジ調整 */
+            .badge {
+                font-size: 0.65rem;
+                padding: 0.2rem 0.4rem;
+            }
+
+            /* タイマー状態表示の調整 */
+            .paused-task .card-body {
+                filter: grayscale(40%);
+            }
+
+            /* 緊急度アニメーションの軽減 */
+            .urgency-emergency,
+            .urgency-overdue {
+                animation: none; /* モバイルではアニメーション無効 */
+            }
+
+            .urgency-critical,
+            .urgency-emergency,
+            .urgency-overdue {
+                box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3) !important;
+            }
+        }
+
+        /* タブレット対応 */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            #analogClock {
+                width: 250px !important;
+                height: 250px !important;
+            }
+
+            .timer-controls {
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 0.25rem;
+            }
+
+            .timer-controls .btn {
+                font-size: 0.8rem;
+                flex: 1;
+                min-width: 80px;
+            }
+
+            .card-body {
+                padding: 1rem;
+            }
+        }
+
+        /* 横向きスマートフォン対応 */
+        @media (max-width: 768px) and (orientation: landscape) {
+            .row.flex-nowrap {
+                flex-direction: row !important;
+            }
+
+            .col-lg-9.col-md-8 {
+                order: 1;
+                flex: 2;
+            }
+
+            .col-lg-3.col-md-4 {
+                order: 2;
+                flex: 1;
+                margin-top: 0;
+                margin-left: 1rem;
+            }
+
+            #analogClock {
+                width: 150px !important;
+                height: 150px !important;
+            }
+
+            .legend {
+                display: none; /* 横向き時は凡例を非表示 */
+            }
+        }
+
+        /* 超小型デバイス対応 (320px以下) */
+        @media (max-width: 320px) {
+            .container {
+                padding-left: 0.5rem;
+                padding-right: 0.5rem;
+            }
+
+            .card-body {
+                padding: 0.5rem;
+            }
+
+            .timer-controls .btn {
+                font-size: 0.7rem;
+                padding: 0.2rem 0.3rem;
+            }
+
+            .deadline-display,
+            .work-timer {
+                font-size: 0.75rem;
+                padding: 0.15rem 0.3rem;
+            }
+
+            #analogClock {
+                width: 180px !important;
+                height: 180px !important;
+            }
+        }
+
+        /* タッチデバイス向けの改善 */
+        @media (pointer: coarse) {
+            .btn {
+                min-height: 44px; /* タッチターゲットサイズの最小値 */
+                min-width: 44px;
+            }
+
+            .timer-controls .btn {
+                min-height: 40px;
+                padding: 0.375rem 0.75rem;
+            }
+
+            .form-check-input {
+                min-height: 20px;
+                min-width: 20px;
+            }
+
+            .action-buttons .btn {
+                min-height: 36px;
+                min-width: 36px;
+            }
+        }
+
+        /* プリント対応 */
+        @media print {
+            .timer-controls,
+            .action-buttons,
+            .navbar,
+            .guest-banner {
+                display: none !important;
+            }
+
+            .task-card {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            .urgency-emergency,
+            .urgency-overdue,
+            .urgency-critical {
+                animation: none !important;
+                box-shadow: none !important;
+            }
+        }
         </style>
 </head>
 <body>
@@ -935,59 +1240,68 @@
             }
         }
 
-        // アナログ時計機能（既存のコード維持）
+        // アナログ時計機能（モバイル対応版）
         function drawAnalogClock() {
             const canvas = document.getElementById('analogClock');
             if (!canvas) return;
+            
+            // キャンバスサイズを動的に取得
+            const canvasRect = canvas.getBoundingClientRect();
+            const actualWidth = canvas.width;
+            const actualHeight = canvas.height;
+            
             const ctx = canvas.getContext('2d');
-            const size = 280, padding = 10;
-            const cx = size/2 + padding, cy = size/2 + padding;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const size = Math.min(actualWidth, actualHeight) - 20;
+            const padding = 10;
+            const cx = actualWidth/2, cy = actualHeight/2;
+            
+            ctx.clearRect(0, 0, actualWidth, actualHeight);
 
             // 外枠
             ctx.beginPath();
             ctx.arc(cx, cy, size/2, 0, 2*Math.PI);
-            ctx.lineWidth = 6;
+            ctx.lineWidth = Math.max(3, size/50);
             ctx.strokeStyle = "#00BFFF";
             ctx.stroke();
 
             // 盤面
             ctx.beginPath();
-            ctx.arc(cx, cy, size/2-3, 0, 2*Math.PI);
+            ctx.arc(cx, cy, size/2-2, 0, 2*Math.PI);
             ctx.fillStyle = "#fff";
             ctx.fill();
 
             // 時間目盛り（薄いグレー）
             for (let i = 0; i < 12; i++) {
                 const angle = (i / 12) * 2 * Math.PI - Math.PI/2;
-                const x1 = cx + (size/2 - 20) * Math.cos(angle);
-                const y1 = cy + (size/2 - 20) * Math.sin(angle);
-                const x2 = cx + (size/2 - 10) * Math.cos(angle);
-                const y2 = cy + (size/2 - 10) * Math.sin(angle);
+                const x1 = cx + (size/2 - 15) * Math.cos(angle);
+                const y1 = cy + (size/2 - 15) * Math.sin(angle);
+                const x2 = cx + (size/2 - 8) * Math.cos(angle);
+                const y2 = cy + (size/2 - 8) * Math.sin(angle);
                 
                 ctx.beginPath();
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
-                ctx.lineWidth = 2;
+                ctx.lineWidth = Math.max(1, size/100);
                 ctx.strokeStyle = "#e0e0e0";
                 ctx.stroke();
             }
 
             // クロスポイント
             ctx.beginPath();
-            ctx.arc(cx, cy, 4, 0, 2*Math.PI);
+            ctx.arc(cx, cy, Math.max(3, size/70), 0, 2*Math.PI);
             ctx.fillStyle = "#000";
             ctx.fill();
 
-            // 12, 3, 6, 9 の数字
-            ctx.font = "24px sans-serif";
+            // 12, 3, 6, 9 の数字（サイズ調整）
+            const fontSize = Math.max(12, size/12);
+            ctx.font = `${fontSize}px sans-serif`;
             ctx.fillStyle = "#333";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText("12", cx, cy - (size/2 - 30));
-            ctx.fillText("3", cx + (size/2 - 30), cy);
-            ctx.fillText("6", cx, cy + (size/2 - 30));
-            ctx.fillText("9", cx - (size/2 - 30), cy);
+            ctx.fillText("12", cx, cy - (size/2 - fontSize*1.5));
+            ctx.fillText("3", cx + (size/2 - fontSize*1.5), cy);
+            ctx.fillText("6", cx, cy + (size/2 - fontSize*1.5));
+            ctx.fillText("9", cx - (size/2 - fontSize*1.5), cy);
 
             // 現在時刻（分は5分単位で丸め）
             const now = new Date();
@@ -1002,11 +1316,12 @@
             // マーカー座標リストを初期化
             markerPositions = [];
 
-            // 12時間以内のタスクを優先度で図形・色分けしてプロット
+            // 12時間以内のタスクを優先度で図形・色分けしてプロット（サイズ調整）
             if (typeof tasks !== "undefined" && Array.isArray(tasks)) {
                 const nowTime = now.getTime();
                 const ms12h = 12 * 60 * 60 * 1000;
-                const radius = size/2 - 50;
+                const radius = size/2 - Math.max(25, size/8);
+                const markerSize = Math.max(6, size/35);
 
                 tasks.forEach(task => {
                     if (!task.due_date || !task.due_time || task.completed) return;
@@ -1021,23 +1336,22 @@
                         const x = cx + radius * Math.cos(angle);
                         const y = cy + radius * Math.sin(angle);
 
-                        let markerRadius = 10;
                         if (task.priority === "high") {
-                            drawStar(ctx, x, y, 10, 5, 0.48, "#dc3545");
+                            drawStar(ctx, x, y, markerSize, 5, 0.48, "#dc3545");
                         } else if (task.priority === "medium") {
-                            drawDiamond(ctx, x, y, 10, "#1976d2");
+                            drawDiamond(ctx, x, y, markerSize, "#1976d2");
                         } else {
                             ctx.beginPath();
-                            ctx.arc(x, y, 8, 0, 2 * Math.PI);
+                            ctx.arc(x, y, markerSize * 0.8, 0, 2 * Math.PI);
                             ctx.fillStyle = "#43a047";
                             ctx.fill();
                             ctx.strokeStyle = "#fff";
-                            ctx.lineWidth = 2;
+                            ctx.lineWidth = Math.max(1, markerSize/8);
                             ctx.stroke();
                         }
                         
                         markerPositions.push({
-                            x, y, r: markerRadius, 
+                            x, y, r: markerSize, 
                             title: task.title,
                             time: `${String(taskHour).padStart(2, '0')}:${String(taskMinute).padStart(2, '0')}`,
                             priority: task.priority,
@@ -1047,21 +1361,21 @@
                 });
             }
 
-            // 分針
+            // 分針（サイズ調整）
             const minAngle = (roundedMinute/60)*2*Math.PI - Math.PI/2;
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(cx + (size*0.38)*Math.cos(minAngle), cy + (size*0.38)*Math.sin(minAngle));
-            ctx.lineWidth = 3;
+            ctx.lineWidth = Math.max(2, size/90);
             ctx.strokeStyle = "#666";
             ctx.stroke();
 
-            // 時針
+            // 時針（サイズ調整）
             const hourAngle = ((hour%12)/12 + roundedMinute/720)*2*Math.PI - Math.PI/2;
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(cx + (size*0.25)*Math.cos(hourAngle), cy + (size*0.25)*Math.sin(hourAngle));
-            ctx.lineWidth = 5;
+            ctx.lineWidth = Math.max(3, size/60);
             ctx.strokeStyle = "#333";
             ctx.stroke();
         }
