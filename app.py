@@ -224,31 +224,77 @@ def categories():
     """カテゴリ管理ページ"""
     try:
         if 'guest_mode' in session:
-            # ゲストモード：デフォルトカテゴリ + セッションカテゴリ
+            # ゲストモード処理
             conn = get_db_connection()
             db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
             conn.close()
             
             categories = [{'id': cat['id'], 'name': cat['name'], 'color': cat['color']} for cat in db_categories]
             categories.extend(session.get('guest_categories', []))
+            
+            # ゲストモードのタスク統計
+            guest_tasks = session.get('guest_tasks', [])
+            task_counts = {}
+            completed_counts = {}
+            
+            for task in guest_tasks:
+                category_name = task.get('category', '')
+                if category_name:
+                    task_counts[category_name] = task_counts.get(category_name, 0) + 1
+                    if task.get('completed'):
+                        completed_counts[category_name] = completed_counts.get(category_name, 0) + 1
+            
         else:
-            # ログインユーザー：全カテゴリ
+            # ログインユーザー処理
             conn = get_db_connection()
             user_id = session.get('user_id')
-            db_categories = conn.execute(
-                'SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC',
-                (user_id,)
-            ).fetchall()
+            
+            # カテゴリとタスク統計を取得
+            categories_with_stats = conn.execute('''
+                SELECT 
+                    c.id, c.name, c.color,
+                    COUNT(t.id) as total_tasks,
+                    COUNT(CASE WHEN t.completed = 1 THEN 1 END) as completed_tasks
+                FROM categories c
+                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
+                WHERE c.user_id IS NULL OR c.user_id = ?
+                GROUP BY c.id, c.name, c.color
+                ORDER BY c.user_id IS NULL DESC, c.name ASC
+            ''', (user_id, user_id)).fetchall()
+            
             conn.close()
             
-            categories = [{'id': cat['id'], 'name': cat['name'], 'color': cat['color']} for cat in db_categories]
+            categories = []
+            task_counts = {}
+            completed_counts = {}
+            
+            for cat in categories_with_stats:
+                categories.append({
+                    'id': cat['id'],
+                    'name': cat['name'],
+                    'color': cat['color']
+                })
+                task_counts[cat['name']] = cat['total_tasks']
+                completed_counts[cat['name']] = cat['completed_tasks']
         
-        return render_template('categories.html', categories=categories, default_colors=DEFAULT_COLORS)
+        is_guest = 'guest_mode' in session
+        
+        return render_template('categories.html', 
+                             categories=categories, 
+                             task_counts=task_counts,
+                             completed_counts=completed_counts,
+                             default_colors=DEFAULT_COLORS,
+                             is_guest=is_guest)
     
     except Exception as e:
         print(f"Categories route error: {e}")
         flash(f'カテゴリの取得に失敗しました: {str(e)}', 'error')
-        return render_template('categories.html', categories=[], default_colors=DEFAULT_COLORS)
+        return render_template('categories.html', 
+                             categories=[], 
+                             task_counts={},
+                             completed_counts={},
+                             default_colors=DEFAULT_COLORS,
+                             is_guest='guest_mode' in session)
 
 @app.route('/add_category', methods=['GET', 'POST'])
 @login_required

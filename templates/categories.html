@@ -161,11 +161,7 @@
                                                 </td>
                                                 <td>
                                                     <span class="badge bg-primary">
-                                                        {% if categorized_tasks and categorized_tasks[category.name] %}
-                                                            {{ categorized_tasks[category.name]|length }}
-                                                        {% else %}
-                                                            0
-                                                        {% endif %}
+                                                        {{ task_counts.get(category.name, 0) }}
                                                     </span>
                                                 </td>
                                                 <td>
