@@ -117,8 +117,143 @@
             background-color: #e3f2fd;
             border-radius: 0.25rem;
             border-left: 3px solid #2196f3;
+            transition: all 0.3s ease;
         }
-    </style>
+        
+        .countdown .text-warning {
+            color: #ffc107 !important;
+        }
+        
+        .countdown .text-danger {
+            color: #dc3545 !important;
+            font-weight: bold;
+        }
+        
+        .countdown.expired {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        
+        /* 期限が近い場合の背景色変更 */
+        .countdown:has(.text-warning) {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+        }
+        
+        .countdown:has(.text-danger) {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+        }
+        
+        /* 期限による緊急度グラデーション */
+        .urgency-normal {
+            /* 通常時（1日以上余裕） */
+            background: linear-gradient(135deg, 
+                rgba(255, 255, 255, 0.9), 
+                rgba(255, 255, 255, 0.7));
+        }
+        
+        .urgency-medium {
+            /* 中程度（24時間以内） */
+            background: linear-gradient(135deg, 
+                rgba(255, 193, 7, 0.15), 
+                rgba(255, 193, 7, 0.05));
+            box-shadow: 0 2px 8px rgba(255, 193, 7, 0.2);
+        }
+        
+        .urgency-high {
+            /* 高緊急度（12時間以内） */
+            background: linear-gradient(135deg, 
+                rgba(255, 152, 0, 0.25), 
+                rgba(255, 152, 0, 0.1));
+            box-shadow: 0 2px 12px rgba(255, 152, 0, 0.3);
+        }
+        
+        .urgency-critical {
+            /* 危険（6時間以内） */
+            background: linear-gradient(135deg, 
+                rgba(244, 67, 54, 0.3), 
+                rgba(244, 67, 54, 0.15));
+            box-shadow: 0 3px 15px rgba(244, 67, 54, 0.4);
+            border: 2px solid rgba(244, 67, 54, 0.3);
+        }
+        
+        .urgency-emergency {
+            /* 緊急（3時間以内） */
+            background: linear-gradient(135deg, 
+                rgba(139, 0, 0, 0.4), 
+                rgba(139, 0, 0, 0.2));
+            box-shadow: 0 4px 20px rgba(139, 0, 0, 0.5);
+            border: 2px solid rgba(139, 0, 0, 0.4);
+            animation: urgent-pulse 1.5s infinite;
+        }
+        
+        .urgency-overdue {
+            /* 期限切れ */
+            background: linear-gradient(135deg, 
+                rgba(76, 175, 80, 0.3), 
+                rgba(139, 0, 0, 0.4));
+            box-shadow: 0 4px 25px rgba(139, 0, 0, 0.6);
+            border: 3px solid rgba(139, 0, 0, 0.5);
+            animation: overdue-flash 1s infinite alternate;
+        }
+        
+        @keyframes urgent-pulse {
+            0% { 
+                transform: scale(1); 
+                box-shadow: 0 4px 20px rgba(139, 0, 0, 0.5);
+            }
+            50% { 
+                transform: scale(1.02); 
+                box-shadow: 0 6px 25px rgba(139, 0, 0, 0.7);
+            }
+            100% { 
+                transform: scale(1); 
+                box-shadow: 0 4px 20px rgba(139, 0, 0, 0.5);
+            }
+        }
+        
+        @keyframes overdue-flash {
+            0% { 
+                background: linear-gradient(135deg, 
+                    rgba(139, 0, 0, 0.4), 
+                    rgba(139, 0, 0, 0.2));
+            }
+            100% { 
+                background: linear-gradient(135deg, 
+                    rgba(220, 53, 69, 0.5), 
+                    rgba(220, 53, 69, 0.3));
+            }
+        }
+        
+        /* グラデーション強化のための追加効果 */
+        .task-card.urgency-critical::before,
+        .task-card.urgency-emergency::before,
+        .task-card.urgency-overdue::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: 10px;
+            background: inherit;
+            opacity: 0.5;
+            z-index: -1;
+            filter: blur(5px);
+        }
+        
+        .task-card {
+            position: relative;
+        }
+        </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -231,11 +366,28 @@
 
                                 <!-- 実働時間機能の追加 -->
                                 {% if not task['completed'] %}
+                                <!-- 自動期限タイマー表示 -->
+                                {% if task['due_date'] and task['due_time'] %}
                                 <div class="countdown mt-2"
                                      data-task-id="{{ task['id'] }}"
-                                     data-seconds="{{ (task.get('estimated_hours', 2) | float * 3600) | int }}">
-                                    ⏳ 残り時間を計算中...
+                                     data-due-date="{{ task['due_date'] }}"
+                                     data-due-time="{{ task['due_time'] }}">
+                                    ⏳ 期限まで計算中...
                                 </div>
+                                {% elif task['due_date'] %}
+                                <div class="countdown mt-2"
+                                     data-task-id="{{ task['id'] }}"
+                                     data-due-date="{{ task['due_date'] }}"
+                                     data-due-time="23:59">
+                                    ⏳ 期限まで計算中...
+                                </div>
+                                {% else %}
+                                <div class="countdown mt-2"
+                                     data-task-id="{{ task['id'] }}"
+                                     data-estimated-hours="{{ task.get('estimated_hours', 2) }}">
+                                    ⏳ 予想作業時間: {{ task.get('estimated_hours', 2) }}時間
+                                </div>
+                                {% endif %}
 
                                 <div class="btn-group mt-2 mb-2 timer-controls" role="group">
                                     <button class="btn btn-warning btn-sm" onclick="pauseTask({{ task['id'] }})">
@@ -339,31 +491,56 @@
         // 実働時間管理用のタイマー
         const timers = {};
 
-        // 実働時間機能の初期化（API連携版）
+        // 統合された期限タイマー機能の初期化
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.countdown').forEach(function(el) {
                 const taskId = parseInt(el.getAttribute('data-task-id'));
-                const totalSeconds = parseInt(el.getAttribute('data-seconds'));
-                if (isNaN(totalSeconds) || isNaN(taskId)) return;
+                const dueDate = el.getAttribute('data-due-date');
+                const dueTime = el.getAttribute('data-due-time');
+                const estimatedHours = parseFloat(el.getAttribute('data-estimated-hours'));
+                
+                if (isNaN(taskId)) return;
 
                 const card = document.querySelector(`.card[data-task-id='${taskId}']`);
-                const editButtons = card.querySelectorAll('.action-buttons a');
+                if (!card) return;
+                
                 const controls = card.querySelector('.timer-controls');
+                if (!controls) return;
+                
                 const resumeBtn = controls.querySelector('.btn-success');
                 const focusBtn = controls.querySelector('.show-focus');
                 const pauseBtn = controls.querySelector('.btn-warning');
 
+                let deadlineTime = null;
+                let isDeadlineMode = false;
+
+                // 期限が設定されている場合は期限まで、そうでなければ予想作業時間
+                if (dueDate && dueTime) {
+                    deadlineTime = new Date(`${dueDate}T${dueTime}`).getTime();
+                    isDeadlineMode = true;
+                } else if (dueDate) {
+                    deadlineTime = new Date(`${dueDate}T23:59`).getTime();
+                    isDeadlineMode = true;
+                } else if (estimatedHours) {
+                    // 予想作業時間モード（従来通り）
+                    deadlineTime = Date.now() + (estimatedHours * 3600 * 1000);
+                    isDeadlineMode = false;
+                }
+
+                if (!deadlineTime) return;
+
                 timers[taskId] = {
                     element: el,
-                    remaining: totalSeconds,
-                    interval: setInterval(() => tick(taskId), 1000),
+                    deadlineTime: deadlineTime,
+                    isDeadlineMode: isDeadlineMode,
+                    interval: setInterval(() => updateCountdownWithUrgency(taskId), 1000),
                     isFocused: true,
                     focusTime: 0,
                     sessionStartTime: Date.now(),
                     lastFocusStart: Date.now(),
                     interruptionStart: null,
                     totalInterrupted: 0,
-                    editButtons: editButtons,
+                    editButtons: card.querySelectorAll('.action-buttons a'),
                     card: card,
                     pauseBtn: pauseBtn,
                     resumeBtn: resumeBtn,
@@ -373,9 +550,111 @@
 
                 // 作業セッションを開始
                 startWorkSession(taskId);
-                updateDisplay(taskId);
+                updateCountdownWithUrgency(taskId);
             });
+            
+            // アナログ時計の初期化
+            drawAnalogClock();
+            setInterval(drawAnalogClock, 60*1000);
+
+            // ツールチップ機能の初期化
+            initTooltip();
         });
+
+        function updateCountdownWithUrgency(taskId) {
+            const timer = timers[taskId];
+            if (!timer) return;
+            
+            const now = Date.now();
+            const remaining = timer.deadlineTime - now;
+            const remainingHours = remaining / (1000 * 60 * 60);
+            
+            // 緊急度レベルを決定（カテゴリ色を保持しつつグラデーション追加）
+            let urgencyClass = 'urgency-normal';
+            if (remaining <= 0) {
+                urgencyClass = 'urgency-overdue';
+            } else if (remainingHours <= 3) {
+                urgencyClass = 'urgency-emergency';
+            } else if (remainingHours <= 6) {
+                urgencyClass = 'urgency-critical';
+            } else if (remainingHours <= 12) {
+                urgencyClass = 'urgency-high';
+            } else if (remainingHours <= 24) {
+                urgencyClass = 'urgency-medium';
+            }
+            
+            // 既存の緊急度クラスを削除してから新しいクラスを追加
+            timer.card.className = timer.card.className.replace(/urgency-\w+/g, '');
+            timer.card.classList.add(urgencyClass);
+            
+            if (remaining <= 0) {
+                if (timer.isDeadlineMode) {
+                    timer.element.innerHTML = '<i class="bi bi-exclamation-triangle text-danger"></i> <span class="text-danger fw-bold">期限切れ</span>';
+                } else {
+                    timer.element.innerHTML = '<i class="bi bi-alarm text-danger"></i> <span class="text-danger fw-bold">時間切れ</span>';
+                }
+                timer.element.classList.add('text-danger');
+                clearInterval(timer.interval);
+                endWorkSession(taskId);
+                return;
+            }
+
+            const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+
+            let displayText = '';
+            let iconClass = 'bi-hourglass-split';
+            let textClass = '';
+
+            if (timer.isDeadlineMode) {
+                // 期限モード - 緊急度に応じてアイコンと色を変更
+                if (remainingHours <= 3) {
+                    iconClass = 'bi-exclamation-triangle';
+                    textClass = 'text-danger fw-bold';
+                } else if (remainingHours <= 6) {
+                    iconClass = 'bi-alarm';
+                    textClass = 'text-danger';
+                } else if (remainingHours <= 12) {
+                    iconClass = 'bi-clock';
+                    textClass = 'text-warning fw-bold';
+                } else if (remainingHours <= 24) {
+                    iconClass = 'bi-clock';
+                    textClass = 'text-warning';
+                }
+                
+                if (days > 0) {
+                    displayText = `期限まで: ${days}日 ${hours}時間 ${minutes}分`;
+                } else if (hours > 0) {
+                    displayText = `期限まで: ${hours}時間 ${minutes}分 ${seconds}秒`;
+                } else {
+                    displayText = `期限まで: ${minutes}分 ${seconds}秒`;
+                }
+            } else {
+                // 予想作業時間モード
+                if (hours > 0) {
+                    displayText = `残り: ${hours}時間 ${minutes}分 ${seconds}秒`;
+                } else {
+                    displayText = `残り: ${minutes}分 ${seconds}秒`;
+                    if (minutes <= 10) {
+                        textClass = 'text-warning';
+                        iconClass = 'bi-clock';
+                    }
+                    if (minutes <= 5) {
+                        textClass = 'text-danger';
+                        iconClass = 'bi-alarm';
+                    }
+                }
+            }
+
+            timer.element.innerHTML = `<i class="${iconClass} ${textClass}"></i> <span class="${textClass}">${displayText}</span>`;
+            
+            // 実働時間も更新
+            if (timer.isFocused) {
+                timer.focusTime++;
+            }
+        }
 
         async function startWorkSession(taskId) {
             try {
@@ -397,35 +676,6 @@
             } catch (error) {
                 console.error('Error starting work session:', error);
             }
-        }
-
-        function updateDisplay(taskId) {
-            const timer = timers[taskId];
-            if (!timer) return;
-            
-            const sec = timer.remaining;
-            if (sec <= 0) {
-                timer.element.innerHTML = '<i class="bi bi-alarm"></i> 時間切れ';
-                timer.element.classList.add('text-danger');
-                clearInterval(timer.interval);
-                endWorkSession(taskId);
-                return;
-            }
-            const h = Math.floor(sec / 3600);
-            const m = Math.floor((sec % 3600) / 60);
-            const s = sec % 60;
-            timer.element.innerHTML = `<i class="bi bi-hourglass-split"></i> 残り: ${h}時間 ${m}分 ${s}秒`;
-        }
-
-        function tick(taskId) {
-            const timer = timers[taskId];
-            if (!timer || timer.remaining <= 0) return;
-
-            timer.remaining--;
-            if (timer.isFocused) {
-                timer.focusTime++;
-            }
-            updateDisplay(taskId);
         }
 
         async function pauseTask(taskId) {
@@ -561,7 +811,7 @@
             }
         }
 
-        // 既存のアナログ時計機能
+        // アナログ時計機能（既存のコード維持）
         function drawAnalogClock() {
             const canvas = document.getElementById('analogClock');
             if (!canvas) return;
@@ -737,12 +987,8 @@
             ctx.restore();
         }
 
-        // 時計の初期化と更新
-        window.addEventListener('DOMContentLoaded', drawAnalogClock);
-        setInterval(drawAnalogClock, 60*1000);
-
-        // ツールチップ表示処理
-        window.addEventListener('DOMContentLoaded', function() {
+        // ツールチップ初期化
+        function initTooltip() {
             const canvas = document.getElementById('analogClock');
             const tooltip = document.getElementById('clock-tooltip');
             if (!canvas || !tooltip) return;
@@ -778,7 +1024,7 @@
             canvas.addEventListener('mouseleave', function() {
                 tooltip.style.display = 'none';
             });
-        });
+        }
     </script>
 </body>
 </html>
