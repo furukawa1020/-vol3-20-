@@ -319,16 +319,84 @@ def add_task():
         description = request.form.get('description', '')
         due_date = request.form.get('due_date', '')
         due_time = request.form.get('due_time', '')
-        category = request.form.get('category', '')
+        category_id = request.form.get('category_id', '')
+        new_category = request.form.get('new_category', '')
         priority = request.form.get('priority', 'medium')
         
         user_id = get_current_user_id()
+        final_category_id = None
+        final_category_name = ''
+        
+        # 新規カテゴリの処理
+        if category_id == 'other' and new_category:
+            if user_id:
+                # 認証ユーザー：データベースに新規カテゴリを追加
+                conn = get_db_connection()
+                try:
+                    cursor = conn.execute(
+                        'INSERT INTO categories (name, color, user_id) VALUES (?, ?, ?)',
+                        (new_category, DEFAULT_COLORS[0], user_id)  # デフォルト色を使用
+                    )
+                    final_category_id = cursor.lastrowid
+                    final_category_name = new_category
+                    conn.commit()
+                    conn.close()
+                except sqlite3.IntegrityError:
+                    conn.close()
+                    flash('同じ名前のカテゴリが既に存在します。', 'error')
+                    return redirect(url_for('add_task'))
+            else:
+                # ゲストモード：セッションに新規カテゴリを追加
+                if 'guest_categories' not in session:
+                    session['guest_categories'] = []
+                
+                guest_categories = session.get('guest_categories', [])
+                if any(cat['name'] == new_category for cat in guest_categories):
+                    flash('同じ名前のカテゴリが既に存在します。', 'error')
+                    return redirect(url_for('add_task'))
+                
+                new_cat_id = max([cat['id'] for cat in guest_categories], default=1000) + 1
+                new_category_obj = {
+                    'id': new_cat_id,
+                    'name': new_category,
+                    'color': DEFAULT_COLORS[0],
+                    'user_id': None
+                }
+                guest_categories.append(new_category_obj)
+                session['guest_categories'] = guest_categories
+                session.modified = True
+                
+                final_category_id = new_cat_id
+                final_category_name = new_category
+        
+        # 既存カテゴリの処理
+        elif category_id and category_id != 'other':
+            final_category_id = int(category_id)
+            # カテゴリ名を取得
+            if user_id:
+                conn = get_db_connection()
+                cat = conn.execute('SELECT name FROM categories WHERE id = ?', (final_category_id,)).fetchone()
+                final_category_name = cat['name'] if cat else ''
+                conn.close()
+            else:
+                # ゲストモードの場合
+                all_categories = []
+                conn = get_db_connection()
+                db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
+                conn.close()
+                all_categories.extend(db_categories)
+                all_categories.extend(session.get('guest_categories', []))
+                
+                for cat in all_categories:
+                    if cat['id'] == final_category_id:
+                        final_category_name = cat['name']
+                        break
         
         if user_id:
             # 認証ユーザーの場合、データベースに保存
             conn = get_db_connection()
-            conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        (title, description, due_date, due_time, category, priority, user_id))
+            conn.execute('INSERT INTO tasks (title, description, due_date, due_time, category, category_id, priority, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        (title, description, due_date, due_time, final_category_name, final_category_id, priority, user_id))
             conn.commit()
             conn.close()
         else:
@@ -346,7 +414,8 @@ def add_task():
                 'description': description,
                 'due_date': due_date,
                 'due_time': due_time,
-                'category': category,
+                'category': final_category_name,
+                'category_id': final_category_id,
                 'priority': priority,
                 'completed': 0,
                 'created_at': datetime.now().isoformat()
@@ -359,7 +428,26 @@ def add_task():
         flash('タスクを追加しました！', 'success')
         return redirect(url_for('index'))
     
-    return render_template('add_task.html')
+    # GET リクエストの場合、カテゴリ一覧を取得
+    if 'guest_mode' in session:
+        # ゲストモード：デフォルトカテゴリ + セッションカテゴリ
+        conn = get_db_connection()
+        db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL ORDER BY name').fetchall()
+        conn.close()
+        
+        categories = list(db_categories)
+        categories.extend(session.get('guest_categories', []))
+    else:
+        # ログインユーザー：全カテゴリ
+        conn = get_db_connection()
+        user_id = session.get('user_id')
+        categories = conn.execute(
+            'SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY user_id IS NULL DESC, name ASC',
+            (user_id,)
+        ).fetchall()
+        conn.close()
+    
+    return render_template('add_task.html', categories=categories)
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required

@@ -83,18 +83,26 @@
                                 <select class="form-select" id="category_id" name="category_id" onchange="checkOtherCategory(this)">
                                     <option value="">選択してください</option>
                                     {% for category in categories %}
-                                        <option value="{{ category.id }}" style="background-color: {{ category.color }}; color: white;">
+                                        <option value="{{ category.id }}" 
+                                                data-color="{{ category.color }}"
+                                                style="background-color: {{ category.color }}; color: white;">
                                             {{ category.name }}
                                         </option>
                                     {% endfor %}
                                     <option value="other">+ その他のカテゴリを追加...</option>
                                 </select>
+                                
+                                <!-- カテゴリプレビュー -->
+                                <div id="category-preview" class="mt-2" style="display: none;">
+                                    <span class="badge" id="preview-badge">プレビュー</span>
+                                </div>
                             </div>
 
                             <!-- 新規カテゴリ追加フィールド（隠し状態） -->
                             <div id="new-category-field" class="mb-3" style="display: none;">
                                 <label for="new_category" class="form-label">新しいカテゴリ名</label>
                                 <input type="text" class="form-control" id="new_category" name="new_category" placeholder="カテゴリ名を入力">
+                                <div class="form-text">新しいカテゴリはデフォルト色で作成されます。</div>
                             </div>
 
                             <div class="mb-3">
@@ -142,15 +150,33 @@
         function checkOtherCategory(select) {
             const newCategoryField = document.getElementById('new-category-field');
             const newCategoryInput = document.getElementById('new_category');
+            const previewDiv = document.getElementById('category-preview');
+            const previewBadge = document.getElementById('preview-badge');
             
             if (select.value === 'other') {
                 newCategoryField.style.display = 'block';
                 newCategoryInput.required = true;
                 newCategoryInput.focus();
+                previewDiv.style.display = 'none';
+            } else if (select.value === '') {
+                newCategoryField.style.display = 'none';
+                newCategoryInput.required = false;
+                newCategoryInput.value = '';
+                previewDiv.style.display = 'none';
             } else {
                 newCategoryField.style.display = 'none';
                 newCategoryInput.required = false;
                 newCategoryInput.value = '';
+                
+                // カテゴリプレビューを表示
+                const selectedOption = select.options[select.selectedIndex];
+                const color = selectedOption.getAttribute('data-color');
+                const name = selectedOption.text;
+                
+                previewBadge.style.backgroundColor = color;
+                previewBadge.style.color = 'white';
+                previewBadge.textContent = name;
+                previewDiv.style.display = 'block';
             }
         }
 
