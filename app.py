@@ -118,16 +118,41 @@ def init_db():
         )
         ''')
         
-        # 既存のテーブルに新しいカラムを追加
-        try:
-            conn.execute('ALTER TABLE tasks ADD COLUMN due_time TEXT')
-        except sqlite3.OperationalError:
-            pass
+        # 作業セッションテーブル（新規追加）
+        conn.execute('''
+        CREATE TABLE IF NOT EXISTS work_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            user_id INTEGER,
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            focus_seconds INTEGER DEFAULT 0,
+            break_seconds INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES tasks (id),
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        ''')
         
+        # 中断記録テーブル（新規追加）
+        conn.execute('''
+        CREATE TABLE IF NOT EXISTS interruptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            reason TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES work_sessions (id)
+        )
+        ''')
+        
+        # 既存のテーブルにestimated_hoursカラムを追加
         try:
-            conn.execute('ALTER TABLE tasks ADD COLUMN category_id INTEGER')
+            conn.execute('ALTER TABLE tasks ADD COLUMN estimated_hours REAL DEFAULT 2.0')
         except sqlite3.OperationalError:
-            pass
+            pass  # カラムが既に存在する場合
         
         # デフォルトカテゴリの作成
         try:
@@ -1319,3 +1344,321 @@ ensure_initialization()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_ENV') == 'development')
+
+# app.pyの最後に追加（既存のコードの後）
+
+# 実働時間管理のAPIエンドポイント群
+
+@app.route('/api/work_session/start', methods=['POST'])
+@login_required
+def start_work_session():
+    """作業セッションを開始"""
+    try:
+        data = request.get_json()
+        task_id = data.get('task_id')
+        
+        if not task_id:
+            return jsonify({'error': 'Task ID is required'}), 400
+            
+        user_id = get_current_user_id()
+        current_time = datetime.now().isoformat()
+        
+        if user_id:
+            # データベースユーザー
+            conn = get_db_connection()
+            
+            # 既存のアクティブセッションを終了
+            conn.execute('''
+                UPDATE work_sessions 
+                SET is_active = 0, end_time = ? 
+                WHERE task_id = ? AND user_id = ? AND is_active = 1
+            ''', (current_time, task_id, user_id))
+            
+            # 新しいセッションを開始
+            cursor = conn.execute('''
+                INSERT INTO work_sessions (task_id, user_id, start_time) 
+                VALUES (?, ?, ?)
+            ''', (task_id, user_id, current_time))
+            
+            session_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+        else:
+            # ゲストモード
+            if 'guest_work_sessions' not in session:
+                session['guest_work_sessions'] = {}
+            
+            # 既存セッションを終了
+            guest_sessions = session.get('guest_work_sessions', {})
+            if str(task_id) in guest_sessions:
+                guest_sessions[str(task_id)]['is_active'] = False
+                guest_sessions[str(task_id)]['end_time'] = current_time
+            
+            # 新しいセッションを開始
+            session_id = len(guest_sessions) + 1
+            guest_sessions[str(task_id)] = {
+                'id': session_id,
+                'task_id': task_id,
+                'start_time': current_time,
+                'focus_seconds': 0,
+                'break_seconds': 0,
+                'is_active': True,
+                'interruptions': []
+            }
+            
+            session['guest_work_sessions'] = guest_sessions
+            session.modified = True
+        
+        return jsonify({
+            'success': True, 
+            'session_id': session_id,
+            'start_time': current_time
+        })
+        
+    except Exception as e:
+        print(f"Error starting work session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/work_session/pause', methods=['POST'])
+@login_required
+def pause_work_session():
+    """作業セッションを一時停止"""
+    try:
+        data = request.get_json()
+        task_id = data.get('task_id')
+        focus_seconds = data.get('focus_seconds', 0)
+        
+        if not task_id:
+            return jsonify({'error': 'Task ID is required'}), 400
+            
+        user_id = get_current_user_id()
+        current_time = datetime.now().isoformat()
+        
+        if user_id:
+            # データベースユーザー
+            conn = get_db_connection()
+            
+            # アクティブセッションを更新
+            conn.execute('''
+                UPDATE work_sessions 
+                SET focus_seconds = focus_seconds + ? 
+                WHERE task_id = ? AND user_id = ? AND is_active = 1
+            ''', (focus_seconds, task_id, user_id))
+            
+            # 中断記録を開始
+            conn.execute('''
+                INSERT INTO interruptions (session_id, start_time) 
+                SELECT id, ? FROM work_sessions 
+                WHERE task_id = ? AND user_id = ? AND is_active = 1
+            ''', (current_time, task_id, user_id))
+            
+            conn.commit()
+            conn.close()
+            
+        else:
+            # ゲストモード
+            guest_sessions = session.get('guest_work_sessions', {})
+            if str(task_id) in guest_sessions and guest_sessions[str(task_id)]['is_active']:
+                guest_sessions[str(task_id)]['focus_seconds'] += focus_seconds
+                guest_sessions[str(task_id)]['interruptions'].append({
+                    'start_time': current_time,
+                    'end_time': None
+                })
+                session['guest_work_sessions'] = guest_sessions
+                session.modified = True
+        
+        return jsonify({'success': True, 'pause_time': current_time})
+        
+    except Exception as e:
+        print(f"Error pausing work session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/work_session/resume', methods=['POST'])
+@login_required
+def resume_work_session():
+    """作業セッションを再開"""
+    try:
+        data = request.get_json()
+        task_id = data.get('task_id')
+        break_seconds = data.get('break_seconds', 0)
+        
+        if not task_id:
+            return jsonify({'error': 'Task ID is required'}), 400
+            
+        user_id = get_current_user_id()
+        current_time = datetime.now().isoformat()
+        
+        if user_id:
+            # データベースユーザー
+            conn = get_db_connection()
+            
+            # 中断時間を更新
+            conn.execute('''
+                UPDATE work_sessions 
+                SET break_seconds = break_seconds + ? 
+                WHERE task_id = ? AND user_id = ? AND is_active = 1
+            ''', (break_seconds, task_id, user_id))
+            
+            # 最新の中断記録を終了
+            conn.execute('''
+                UPDATE interruptions 
+                SET end_time = ? 
+                WHERE session_id = (
+                    SELECT id FROM work_sessions 
+                    WHERE task_id = ? AND user_id = ? AND is_active = 1
+                ) AND end_time IS NULL
+            ''', (current_time, task_id, user_id))
+            
+            conn.commit()
+            conn.close()
+            
+        else:
+            # ゲストモード
+            guest_sessions = session.get('guest_work_sessions', {})
+            if str(task_id) in guest_sessions and guest_sessions[str(task_id)]['is_active']:
+                guest_sessions[str(task_id)]['break_seconds'] += break_seconds
+                
+                # 最新の中断を終了
+                interruptions = guest_sessions[str(task_id)]['interruptions']
+                if interruptions and interruptions[-1]['end_time'] is None:
+                    interruptions[-1]['end_time'] = current_time
+                
+                session['guest_work_sessions'] = guest_sessions
+                session.modified = True
+        
+        return jsonify({'success': True, 'resume_time': current_time})
+        
+    except Exception as e:
+        print(f"Error resuming work session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/work_session/end', methods=['POST'])
+@login_required
+def end_work_session():
+    """作業セッションを終了"""
+    try:
+        data = request.get_json()
+        task_id = data.get('task_id')
+        focus_seconds = data.get('focus_seconds', 0)
+        
+        if not task_id:
+            return jsonify({'error': 'Task ID is required'}), 400
+            
+        user_id = get_current_user_id()
+        current_time = datetime.now().isoformat()
+        
+        if user_id:
+            # データベースユーザー
+            conn = get_db_connection()
+            
+            # セッションを終了
+            conn.execute('''
+                UPDATE work_sessions 
+                SET is_active = 0, end_time = ?, focus_seconds = focus_seconds + ? 
+                WHERE task_id = ? AND user_id = ? AND is_active = 1
+            ''', (current_time, focus_seconds, task_id, user_id))
+            
+            conn.commit()
+            conn.close()
+            
+        else:
+            # ゲストモード
+            guest_sessions = session.get('guest_work_sessions', {})
+            if str(task_id) in guest_sessions:
+                guest_sessions[str(task_id)]['is_active'] = False
+                guest_sessions[str(task_id)]['end_time'] = current_time
+                guest_sessions[str(task_id)]['focus_seconds'] += focus_seconds
+                session['guest_work_sessions'] = guest_sessions
+                session.modified = True
+        
+        return jsonify({'success': True, 'end_time': current_time})
+        
+    except Exception as e:
+        print(f"Error ending work session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/work_session/stats/<int:task_id>')
+@login_required
+def get_work_stats(task_id):
+    """タスクの実働時間統計を取得"""
+    try:
+        user_id = get_current_user_id()
+        
+        if user_id:
+            # データベースユーザー
+            conn = get_db_connection()
+            
+            # 総実働時間とセッション情報を取得
+            stats = conn.execute('''
+                SELECT 
+                    SUM(focus_seconds) as total_focus_seconds,
+                    SUM(break_seconds) as total_break_seconds,
+                    COUNT(*) as session_count,
+                    AVG(focus_seconds) as avg_focus_seconds
+                FROM work_sessions 
+                WHERE task_id = ? AND user_id = ?
+            ''', (task_id, user_id)).fetchone()
+            
+            # 中断回数を取得
+            interruption_count = conn.execute('''
+                SELECT COUNT(*) FROM interruptions i
+                JOIN work_sessions ws ON i.session_id = ws.id
+                WHERE ws.task_id = ? AND ws.user_id = ?
+            ''', (task_id, user_id)).fetchone()[0]
+            
+            conn.close()
+            
+            total_focus = stats['total_focus_seconds'] or 0
+            total_break = stats['total_break_seconds'] or 0
+            
+            return jsonify({
+                'total_focus_seconds': total_focus,
+                'total_break_seconds': total_break,
+                'session_count': stats['session_count'] or 0,
+                'interruption_count': interruption_count,
+                'avg_focus_seconds': stats['avg_focus_seconds'] or 0,
+                'focus_percentage': round(total_focus / max(total_focus + total_break, 1) * 100, 1)
+            })
+            
+        else:
+            # ゲストモード
+            guest_sessions = session.get('guest_work_sessions', {})
+            task_session = guest_sessions.get(str(task_id))
+            
+            if task_session:
+                total_focus = task_session['focus_seconds']
+                total_break = task_session['break_seconds']
+                interruption_count = len(task_session['interruptions'])
+                
+                return jsonify({
+                    'total_focus_seconds': total_focus,
+                    'total_break_seconds': total_break,
+                    'session_count': 1,
+                    'interruption_count': interruption_count,
+                    'avg_focus_seconds': total_focus,
+                    'focus_percentage': round(total_focus / max(total_focus + total_break, 1) * 100, 1)
+                })
+            else:
+                return jsonify({
+                    'total_focus_seconds': 0,
+                    'total_break_seconds': 0,
+                    'session_count': 0,
+                    'interruption_count': 0,
+                    'avg_focus_seconds': 0,
+                    'focus_percentage': 100
+                })
+        
+    except Exception as e:
+        print(f"Error getting work stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

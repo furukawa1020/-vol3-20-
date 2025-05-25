@@ -803,7 +803,9 @@
         // タスク一時停止関数
         async function pauseTask(taskId) {
             const timer = timers[taskId];
-            if (!timer || !timer.sessionStarted || timer.isPaused) return;
+            if (!timer || timer.isPaused) return;
+            
+            console.log(`Pausing task ${taskId}`);  // デバッグログ
             
             timer.isPaused = true;
             timer.interruptionStart = Date.now();
@@ -825,7 +827,12 @@
                 });
                 
                 if (response.ok) {
-                    console.log('Work session paused');
+                    const result = await response.json();
+                    console.log('Work session paused:', result);
+                } else {
+                    console.error('Pause API error:', response.status, response.statusText);
+                    const errorText = await response.text();
+                    console.error('Error details:', errorText);
                 }
             } catch (error) {
                 console.error('Error pausing work session:', error);
@@ -888,6 +895,8 @@
 
         // 実働時間統計表示関数
         async function showFocusTime(taskId) {
+            console.log(`Showing focus time for task ${taskId}`);  // デバッグログ
+            
             try {
                 const response = await fetch(`/api/work_session/stats/${taskId}`);
                 if (response.ok) {
@@ -901,6 +910,9 @@
                           `📈 集中度: ${stats.focus_percentage}%\n` +
                           `⏸️ 中断回数: ${stats.interruption_count}回\n` +
                           `📅 セッション数: ${stats.session_count}回`);
+                } else {
+                    console.error('Stats API error:', response.status, response.statusText);
+                    throw new Error('API Error');
                 }
             } catch (error) {
                 console.error('Error getting work stats:', error);
@@ -915,7 +927,10 @@
                     
                     alert(`📊 実働時間統計（現在セッション）\n\n` +
                           `⏰ 作業時間: ${h}時間 ${m}分 ${s}秒\n` +
-                          `📈 集中度: ${focusPercentage}%`);
+                          `📈 集中度: ${focusPercentage}%\n` +
+                          `※ APIエラーのため現在セッションのみ表示`);
+                } else {
+                    alert('実働時間データの取得に失敗しました。');
                 }
             }
         }
