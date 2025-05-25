@@ -9,8 +9,7 @@ from functools import wraps
 
 # matplotlib設定をインポート前に行う
 import matplotlib
-matplotlib.use('Agg')  # GUI不要のバックエンドを設定
-# フォント警告を無効にする
+matplotlib.use('Agg')
 matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 import matplotlib.pyplot as plt
 import io
