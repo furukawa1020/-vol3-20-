@@ -225,7 +225,6 @@ def logout():
     return redirect(url_for('landing'))
 
 @app.route('/dashboard')
-@app.route('/index')
 @login_required
 def index():
     user_id = get_current_user_id()
