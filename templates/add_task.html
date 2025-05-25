@@ -6,6 +6,14 @@
     <title>新規タスク - タスク管理アプリ</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .category-preview {
+            margin-top: 10px;
+        }
+        .form-floating {
+            margin-bottom: 1rem;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -26,54 +34,63 @@
                 <a class="nav-link" href="{{ url_for('categories') }}">
                     <i class="bi bi-tags"></i> カテゴリ
                 </a>
+                {% if 'guest_mode' in session %}
+                    <span class="nav-link text-warning">
+                        <i class="bi bi-person-dash"></i> ゲストモード
+                    </span>
+                {% else %}
+                    <span class="nav-link">
+                        <i class="bi bi-person-check"></i> {{ session.username }}
+                    </span>
+                {% endif %}
+                <a class="nav-link" href="{{ url_for('logout') }}">
+                    <i class="bi bi-box-arrow-right"></i> ログアウト
+                </a>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
-        <div class="row">
-            <div class="col-md-8 mx-auto">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category if category in ['success', 'info', 'warning'] else 'info' }} alert-dismissible fade show">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row justify-content-center">
+            <div class="col-md-8">
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="mb-0">
-                            <i class="bi bi-plus-circle"></i> 新しいタスクを追加
-                        </h3>
+                        <h4><i class="bi bi-plus-circle"></i> 新しいタスクを追加</h4>
                     </div>
                     <div class="card-body">
-                        {% with messages = get_flashed_messages(with_categories=true) %}
-                            {% if messages %}
-                                {% for category, message in messages %}
-                                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show">
-                                        {{ message }}
-                                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                                    </div>
-                                {% endfor %}
-                            {% endif %}
-                        {% endwith %}
-
                         <form method="POST">
-                            <div class="mb-3">
-                                <label for="title" class="form-label">タスクタイトル *</label>
-                                <input type="text" class="form-control" id="title" name="title" required>
+                            <div class="form-floating mb-3">
+                                <input type="text" class="form-control" id="title" name="title" placeholder="タスクのタイトル" required>
+                                <label for="title">タスクのタイトル *</label>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="description" class="form-label">詳細</label>
-                                <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                            <div class="form-floating mb-3">
+                                <textarea class="form-control" id="description" name="description" placeholder="説明（オプション）" style="height: 100px"></textarea>
+                                <label for="description">説明（オプション）</label>
                             </div>
 
-                            <div class="row">
+                            <div class="row mb-3">
                                 <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="due_date" class="form-label">期限日</label>
-                                        <input type="date" class="form-control" id="due_date" name="due_date">
+                                    <div class="form-floating">
+                                        <input type="date" class="form-control" id="due_date" name="due_date" placeholder="期日">
+                                        <label for="due_date">期日</label>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="due_time" class="form-label">期限時刻</label>
-                                        <input type="time" class="form-control" id="due_time" name="due_time">
-                                        <div class="form-text">例: 14:30 (時刻を指定しない場合は空欄)</div>
+                                    <div class="form-floating">
+                                        <input type="time" class="form-control" id="due_time" name="due_time" placeholder="時刻">
+                                        <label for="due_time">時刻</label>
                                     </div>
                                 </div>
                             </div>
@@ -106,35 +123,20 @@
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label">優先度</label>
-                                <div class="d-flex">
-                                    <div class="form-check me-3">
-                                        <input class="form-check-input" type="radio" name="priority" id="priority-high" value="high">
-                                        <label class="form-check-label text-danger" for="priority-high">
-                                            <i class="bi bi-exclamation-triangle-fill"></i> 高
-                                        </label>
-                                    </div>
-                                    <div class="form-check me-3">
-                                        <input class="form-check-input" type="radio" name="priority" id="priority-medium" value="medium" checked>
-                                        <label class="form-check-label text-warning" for="priority-medium">
-                                            <i class="bi bi-dash-circle-fill"></i> 中
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="priority" id="priority-low" value="low">
-                                        <label class="form-check-label text-success" for="priority-low">
-                                            <i class="bi bi-check-circle-fill"></i> 低
-                                        </label>
-                                    </div>
-                                </div>
+                                <label for="priority" class="form-label">優先度</label>
+                                <select class="form-select" id="priority" name="priority">
+                                    <option value="low">低</option>
+                                    <option value="medium" selected>中</option>
+                                    <option value="high">高</option>
+                                </select>
                             </div>
 
                             <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                                <a href="{{ url_for('index') }}" class="btn btn-secondary me-md-2">
                                     <i class="bi bi-arrow-left"></i> キャンセル
                                 </a>
                                 <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check-lg"></i> 保存
+                                    <i class="bi bi-plus-lg"></i> タスクを追加
                                 </button>
                             </div>
                         </form>
@@ -180,38 +182,10 @@
             }
         }
 
-        // 現在の日付をデフォルトに設定（オプション）
+        // 今日の日付を期日のデフォルトに設定
         document.addEventListener('DOMContentLoaded', function() {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('due_date').value = today;
-        });
-
-        // フォーム送信前のバリデーション
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const title = document.getElementById('title').value.trim();
-            const dueDate = document.getElementById('due_date').value;
-            const dueTime = document.getElementById('due_time').value;
-            
-            if (!title) {
-                e.preventDefault();
-                alert('タスクタイトルを入力してください。');
-                document.getElementById('title').focus();
-                return;
-            }
-
-            // 日付が設定されていて、時刻が現在時刻より前の場合の警告
-            if (dueDate && dueTime) {
-                const now = new Date();
-                const dueDateTime = new Date(dueDate + 'T' + dueTime);
-                
-                if (dueDateTime < now) {
-                    const confirmResult = confirm('設定した期限が過去の時刻です。このまま保存しますか？');
-                    if (!confirmResult) {
-                        e.preventDefault();
-                        return;
-                    }
-                }
-            }
         });
     </script>
 </body>
