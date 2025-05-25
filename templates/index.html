@@ -339,12 +339,12 @@
         // 実働時間管理用のタイマー
         const timers = {};
 
-        // 実働時間機能の初期化
+        // 実働時間機能の初期化（API連携版）
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.countdown').forEach(function(el) {
-                const taskId = el.getAttribute('data-task-id');
+                const taskId = parseInt(el.getAttribute('data-task-id'));
                 const totalSeconds = parseInt(el.getAttribute('data-seconds'));
-                if (isNaN(totalSeconds)) return;
+                if (isNaN(totalSeconds) || isNaN(taskId)) return;
 
                 const card = document.querySelector(`.card[data-task-id='${taskId}']`);
                 const editButtons = card.querySelectorAll('.action-buttons a');
@@ -359,18 +359,45 @@
                     interval: setInterval(() => tick(taskId), 1000),
                     isFocused: true,
                     focusTime: 0,
+                    sessionStartTime: Date.now(),
+                    lastFocusStart: Date.now(),
                     interruptionStart: null,
                     totalInterrupted: 0,
                     editButtons: editButtons,
                     card: card,
                     pauseBtn: pauseBtn,
                     resumeBtn: resumeBtn,
-                    focusBtn: focusBtn
+                    focusBtn: focusBtn,
+                    sessionStarted: false
                 };
 
+                // 作業セッションを開始
+                startWorkSession(taskId);
                 updateDisplay(taskId);
             });
         });
+
+        async function startWorkSession(taskId) {
+            try {
+                const response = await fetch('/api/work_session/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ task_id: taskId })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (timers[taskId]) {
+                        timers[taskId].sessionStarted = true;
+                    }
+                    console.log('Work session started:', data);
+                }
+            } catch (error) {
+                console.error('Error starting work session:', error);
+            }
+        }
 
         function updateDisplay(taskId) {
             const timer = timers[taskId];
@@ -381,6 +408,7 @@
                 timer.element.innerHTML = '<i class="bi bi-alarm"></i> 時間切れ';
                 timer.element.classList.add('text-danger');
                 clearInterval(timer.interval);
+                endWorkSession(taskId);
                 return;
             }
             const h = Math.floor(sec / 3600);
@@ -400,9 +428,9 @@
             updateDisplay(taskId);
         }
 
-        function pauseTask(taskId) {
+        async function pauseTask(taskId) {
             const timer = timers[taskId];
-            if (!timer) return;
+            if (!timer || !timer.sessionStarted) return;
             
             if (timer.isFocused) {
                 timer.isFocused = false;
@@ -411,44 +439,126 @@
                 timer.pauseBtn.style.display = 'none';
                 timer.resumeBtn.style.display = 'inline-block';
                 timer.focusBtn.style.display = 'inline-block';
+
+                // API呼び出し
+                try {
+                    const response = await fetch('/api/work_session/pause', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            task_id: taskId,
+                            focus_seconds: timer.focusTime
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        console.log('Work session paused');
+                    }
+                } catch (error) {
+                    console.error('Error pausing work session:', error);
+                }
             }
         }
 
-        function startTask(taskId) {
+        async function startTask(taskId) {
             const timer = timers[taskId];
-            if (!timer) return;
+            if (!timer || !timer.sessionStarted) return;
             
             if (!timer.isFocused) {
-                timer.isFocused = true;
+                let breakSeconds = 0;
                 if (timer.interruptionStart) {
-                    const interrupted = (Date.now() - timer.interruptionStart) / 1000;
-                    timer.totalInterrupted += interrupted;
+                    breakSeconds = Math.floor((Date.now() - timer.interruptionStart) / 1000);
+                    timer.totalInterrupted += breakSeconds;
                     timer.interruptionStart = null;
                 }
+
+                timer.isFocused = true;
                 timer.card.classList.remove('paused-task');
                 timer.resumeBtn.style.display = 'none';
                 timer.focusBtn.style.display = 'none';
                 timer.pauseBtn.style.display = 'inline-block';
+
+                // API呼び出し
+                try {
+                    const response = await fetch('/api/work_session/resume', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            task_id: taskId,
+                            break_seconds: breakSeconds
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        console.log('Work session resumed');
+                    }
+                } catch (error) {
+                    console.error('Error resuming work session:', error);
+                }
             }
         }
 
-        function showFocusTime(taskId) {
+        async function endWorkSession(taskId) {
             const timer = timers[taskId];
-            if (!timer) return;
-            
-            const ft = timer.focusTime;
-            const h = Math.floor(ft / 3600);
-            const m = Math.floor((ft % 3600) / 60);
-            const s = ft % 60;
-            
-            // より詳細な情報を表示
-            const totalElapsed = (timer.focusTime + timer.totalInterrupted);
-            const focusPercentage = totalElapsed > 0 ? Math.round((timer.focusTime / totalElapsed) * 100) : 100;
-            
-            alert(`📊 実働時間統計\n\n` +
-                  `⏰ 実働時間: ${h}時間 ${m}分 ${s}秒\n` +
-                  `📈 集中度: ${focusPercentage}%\n` +
-                  `⏸️ 中断回数: ${Math.floor(timer.totalInterrupted / 60)}回程度`);
+            if (!timer || !timer.sessionStarted) return;
+
+            try {
+                const response = await fetch('/api/work_session/end', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId,
+                        focus_seconds: timer.focusTime
+                    })
+                });
+                
+                if (response.ok) {
+                    console.log('Work session ended');
+                    timer.sessionStarted = false;
+                }
+            } catch (error) {
+                console.error('Error ending work session:', error);
+            }
+        }
+
+        async function showFocusTime(taskId) {
+            try {
+                const response = await fetch(`/api/work_session/stats/${taskId}`);
+                if (response.ok) {
+                    const stats = await response.json();
+                    const h = Math.floor(stats.total_focus_seconds / 3600);
+                    const m = Math.floor((stats.total_focus_seconds % 3600) / 60);
+                    const s = stats.total_focus_seconds % 60;
+                    
+                    alert(`📊 実働時間統計\n\n` +
+                          `⏰ 総実働時間: ${h}時間 ${m}分 ${s}秒\n` +
+                          `📈 集中度: ${stats.focus_percentage}%\n` +
+                          `⏸️ 中断回数: ${stats.interruption_count}回\n` +
+                          `📅 セッション数: ${stats.session_count}回`);
+                }
+            } catch (error) {
+                console.error('Error getting work stats:', error);
+                
+                // フォールバック：ローカルデータを表示
+                const timer = timers[taskId];
+                if (timer) {
+                    const ft = timer.focusTime;
+                    const h = Math.floor(ft / 3600);
+                    const m = Math.floor((ft % 3600) / 60);
+                    const s = ft % 60;
+                    const focusPercentage = timer.focusTime > 0 ? Math.round((timer.focusTime / (timer.focusTime + timer.totalInterrupted)) * 100) : 100;
+                    
+                    alert(`📊 実働時間統計（現在セッション）\n\n` +
+                          `⏰ 実働時間: ${h}時間 ${m}分 ${s}秒\n` +
+                          `📈 集中度: ${focusPercentage}%`);
+                }
+            }
         }
 
         // 既存のアナログ時計機能

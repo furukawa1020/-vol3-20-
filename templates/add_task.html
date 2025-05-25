@@ -99,6 +99,13 @@
                                 </div>
                             </div>
 
+                            <!-- 予想作業時間フィールドを追加 -->
+                            <div class="form-floating mb-3">
+                                <input type="number" class="form-control" id="estimated_hours" name="estimated_hours" 
+                                       placeholder="予想作業時間" min="0.5" max="24" step="0.5" value="2">
+                                <label for="estimated_hours">予想作業時間（時間）</label>
+                            </div>
+
                             <div class="mb-3">
                                 <label for="category_id" class="form-label">カテゴリ</label>
                                 <select class="form-select" id="category_id" name="category_id" onchange="checkOtherCategory(this)">
