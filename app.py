@@ -25,6 +25,7 @@ def init_db():
         due_date TEXT,
         category TEXT,
         priority TEXT,
+        estimated_hours REAL,
         completed INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -47,66 +48,55 @@ def add_task():
     if request.method == 'POST':
         title = request.form['title']
         description = request.form.get('description', '')
-        
-        due_date_str = request.form.get('due_date', '')
-        due_date = None
-        if due_date_str:
-            try:
-                # Store date as string in the database
-                due_date = due_date_str
-            except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
-                return redirect(url_for('add_task'))
-        
+        due_date = request.form.get('due_date', '')
         category = request.form.get('category', '')
         priority = request.form.get('priority', 'medium')
-        
+        estimated_hours = request.form.get('estimated_hours')
+        estimated_hours = float(estimated_hours) if estimated_hours else None
+
         conn = get_db_connection()
-        conn.execute('INSERT INTO tasks (title, description, due_date, category, priority) VALUES (?, ?, ?, ?, ?)',
-                    (title, description, due_date, category, priority))
+        conn.execute('''
+            INSERT INTO tasks (title, description, due_date, category, priority, estimated_hours)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (title, description, due_date, category, priority, estimated_hours))
         conn.commit()
         conn.close()
-        
+
         flash('Task added successfully!', 'success')
         return redirect(url_for('index'))
-    
+
     return render_template('add_task.html')
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 def edit_task(id):
     conn = get_db_connection()
     task = conn.execute('SELECT * FROM tasks WHERE id = ?', (id,)).fetchone()
-    
+
     if task is None:
         conn.close()
         flash('Task not found!', 'error')
         return redirect(url_for('index'))
-    
+
     if request.method == 'POST':
         title = request.form['title']
         description = request.form.get('description', '')
-        
-        due_date_str = request.form.get('due_date', '')
-        due_date = None
-        if due_date_str:
-            try:
-                # Store date as string
-                due_date = due_date_str
-            except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
-                return redirect(url_for('edit_task', id=id))
-        
+        due_date = request.form.get('due_date', '')
         category = request.form.get('category', '')
         priority = request.form.get('priority', 'medium')
-        
-        conn.execute('UPDATE tasks SET title = ?, description = ?, due_date = ?, category = ?, priority = ? WHERE id = ?',
-                    (title, description, due_date, category, priority, id))
+        estimated_hours = request.form.get('estimated_hours')
+        estimated_hours = float(estimated_hours) if estimated_hours else None
+
+        conn.execute('''
+            UPDATE tasks
+            SET title = ?, description = ?, due_date = ?, category = ?, priority = ?, estimated_hours = ?
+            WHERE id = ?
+        ''', (title, description, due_date, category, priority, estimated_hours, id))
         conn.commit()
         conn.close()
-        
+
         flash('Task updated successfully!', 'success')
         return redirect(url_for('index'))
-    
+
     conn.close()
     return render_template('edit_task.html', task=task)
 
@@ -119,19 +109,16 @@ def delete_task(id):
     flash('Task deleted successfully!', 'success')
     return redirect(url_for('index'))
 
-
-    
 @app.route('/complete/<int:id>')
 def complete_task(id):
     conn = get_db_connection()
     task = conn.execute('SELECT completed FROM tasks WHERE id = ?', (id,)).fetchone()
-    
+
     if task is None:
         conn.close()
         flash('Task not found!', 'error')
         return redirect(url_for('index'))
-    
-    # Toggle completed status (0 -> 1, 1 -> 0)
+
     new_status = 0 if task['completed'] else 1
     conn.execute('UPDATE tasks SET completed = ? WHERE id = ?', (new_status, id))
     conn.commit()

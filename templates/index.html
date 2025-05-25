@@ -1,6 +1,29 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<style>
+.paused-task .card-body {
+    filter: grayscale(60%);
+}
+
+.paused-task .card-body > *:not(.timer-controls) {
+    opacity: 0.5;
+    pointer-events: none;
+}
+.paused-task .timer-controls .btn-success,
+.paused-task .timer-controls .show-focus {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    filter: none !important;
+}
+.timer-controls .btn-success,
+.timer-controls .show-focus {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    filter: none !important;
+}
+</style>
+
 <div class="row mb-4">
     <div class="col">
         <h1>タスク一覧</h1>
@@ -13,66 +36,168 @@
 </div>
 
 {% if tasks %}
-    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-        {% for task in tasks %}
-            <div class="col">
-                <div class="card task-card priority-{{ task['priority'] }} {% if task['completed'] %}completed-task{% endif %}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h5 class="card-title mb-0">{{ task['title'] }}</h5>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" 
-                                       {% if task['completed'] %}checked{% endif %} 
-                                       data-task-id="{{ task['id'] }}" 
-                                       onchange="completeTask(this)">
-                            </div>
-                        </div>
-                        
-                        {% if task['category'] %}
-                            <span class="category-badge mb-2">{{ task['category'] }}</span>
-                        {% endif %}
-                        
-                        {% if task['description'] %}
-                            <p class="card-text">{{ task['description'] }}</p>
-                        {% endif %}
-                        
-                        <div class="d-flex justify-content-between align-items-center mt-3">
-                            <div>
-                                {% if task['due_date'] %}
-                                    <small class="text-muted">
-                                        <i class="bi bi-calendar"></i> 
-                                        {{ task['due_date'] }}
-                                    </small>
-                                {% endif %}
-                            </div>
-                            <div>
-                                <a href="{{ url_for('edit_task', id=task['id']) }}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                <a href="{{ url_for('delete_task', id=task['id']) }}" class="btn btn-sm btn-outline-danger" 
-                                   onclick="return confirm('本当に削除しますか？');">
-                                    <i class="bi bi-trash"></i>
-                                </a>
-                            </div>
-                        </div>
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    {% for task in tasks %}
+    <div class="col">
+        <div class="card task-card priority-{{ task['priority'] }} {% if task['completed'] %}completed-task{% endif %}" data-task-id="{{ task['id'] }}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">{{ task['title'] }}</h5>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox"
+                            {% if task['completed'] %} checked {% endif %}
+                            data-task-id="{{ task['id'] }}"
+                            onchange="completeTask(this)">
                     </div>
                 </div>
+
+                {% if task['category'] %}
+                <span class="category-badge mb-2">{{ task['category'] }}</span>
+                {% endif %}
+                {% if task['description'] %}
+                <p class="card-text">{{ task['description'] }}</p>
+                {% endif %}
+
+                {% if task['estimated_hours'] %}
+                <div class="countdown mt-2 text-primary fw-bold"
+                     data-task-id="{{ task['id'] }}"
+                     data-seconds="{{ task['estimated_hours'] | float * 3600 }}">
+                    ⏳ {{ task['estimated_hours'] }} 時間の残り時間を計算中…
+                </div>
+                {% endif %}
+
+                <div class="btn-group mt-2 mb-2 timer-controls" role="group">
+                    <button class="btn btn-warning btn-sm" onclick="pauseTask({{ task['id'] }})">⏸ 一時停止</button>
+                    <button class="btn btn-success btn-sm" style="display:none;" onclick="startTask({{ task['id'] }})">▶️ 再開</button>
+                    <button class="btn btn-info btn-sm show-focus" style="display:none;" onclick="showFocusTime({{ task['id'] }})">📊 実働時間を見る</button>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <div>
+                        {% if task['due_date'] %}
+                        <small class="text-muted"><i class="bi bi-calendar"></i> {{ task['due_date'] }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="action-buttons">
+                        <a href="{{ url_for('delete_task', id=task['id']) }}" class="btn btn-sm btn-outline-danger" 
+                           onclick="return confirm('本当に削除しますか？');">
+                        <i class="bi bi-trash"></i>
+                        </a>
+                    </div>
+                </div>
+
             </div>
-        {% endfor %}
+        </div>
     </div>
+    {% endfor %}
+</div>
 {% else %}
-    <div class="alert alert-info">
-        <h4 class="alert-heading">タスクがありません</h4>
-        <p>新しいタスクを追加して始めましょう！</p>
-    </div>
+<div class="alert alert-info">
+    <h4 class="alert-heading">タスクがありません</h4>
+    <p>新しいタスクを追加して始めましょう！</p>
+</div>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-    function completeTask(element) {
-        const taskId = element.getAttribute('data-task-id');
-        window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
+const timers = {};
+
+document.querySelectorAll('.countdown').forEach(function(el) {
+    const taskId = el.getAttribute('data-task-id');
+    const totalSeconds = parseInt(el.getAttribute('data-seconds'));
+    if (isNaN(totalSeconds)) return;
+
+    const card = document.querySelector(`.card[data-task-id='${taskId}']`);
+    const editButtons = card.querySelectorAll('.action-buttons a');
+    const controls = card.querySelector('.timer-controls');
+    const resumeBtn = controls.querySelector('.btn-success');
+    const focusBtn = controls.querySelector('.show-focus');
+    const pauseBtn = controls.querySelector('.btn-warning');
+
+    timers[taskId] = {
+        element: el,
+        remaining: totalSeconds,
+        interval: setInterval(() => tick(taskId), 1000),
+        isFocused: true,
+        focusTime: 0,
+        interruptionStart: null,
+        totalInterrupted: 0,
+        editButtons: editButtons,
+        card: card,
+        pauseBtn: pauseBtn,
+        resumeBtn: resumeBtn,
+        focusBtn: focusBtn
+    };
+
+    updateDisplay(taskId);
+});
+
+function updateDisplay(taskId) {
+    const timer = timers[taskId];
+    const sec = timer.remaining;
+    if (sec <= 0) {
+        timer.element.textContent = "⏰ 時間切れ";
+        clearInterval(timer.interval);
+        return;
     }
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    timer.element.textContent = `⏳ 残り: ${h}時間 ${m}分 ${s}秒`;
+}
+
+function tick(taskId) {
+    const timer = timers[taskId];
+    if (timer.remaining <= 0) return;
+
+    timer.remaining--;
+    if (timer.isFocused) {
+        timer.focusTime++;
+    }
+    updateDisplay(taskId);
+}
+
+function pauseTask(taskId) {
+    const timer = timers[taskId];
+    if (timer.isFocused) {
+        timer.isFocused = false;
+        timer.interruptionStart = Date.now();
+        timer.card.classList.add('paused-task');
+        timer.pauseBtn.style.display = 'none';
+        timer.resumeBtn.style.display = 'inline-block';
+        timer.focusBtn.style.display = 'inline-block';
+    }
+}
+
+function startTask(taskId) {
+    const timer = timers[taskId];
+    if (!timer.isFocused) {
+        timer.isFocused = true;
+        if (timer.interruptionStart) {
+            const interrupted = (Date.now() - timer.interruptionStart) / 1000;
+            timer.totalInterrupted += interrupted;
+            timer.interruptionStart = null;
+        }
+        timer.card.classList.remove('paused-task');
+        timer.resumeBtn.style.display = 'none';
+        timer.focusBtn.style.display = 'none';
+        timer.pauseBtn.style.display = 'inline-block';
+    }
+}
+
+function showFocusTime(taskId) {
+    const timer = timers[taskId];
+    const ft = timer.focusTime;
+    const h = Math.floor(ft / 3600);
+    const m = Math.floor((ft % 3600) / 60);
+    const s = ft % 60;
+    alert(`実働時間: ${h}時間 ${m}分 ${s}秒`);
+}
+
+function completeTask(el) {
+    const taskId = el.getAttribute('data-task-id');
+    window.location.href = '{{ url_for("complete_task", id=0) }}'.replace('0', taskId);
+}
 </script>
 {% endblock %}
