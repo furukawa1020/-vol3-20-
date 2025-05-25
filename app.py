@@ -250,9 +250,14 @@ def categories():
         flash(f'カテゴリの取得に失敗しました: {str(e)}', 'error')
         return render_template('categories.html', categories=[], default_colors=DEFAULT_COLORS)
 
-@app.route('/add_category', methods=['POST'])
+@app.route('/add_category', methods=['GET', 'POST'])
 @login_required
 def add_category():
+    if request.method == 'GET':
+        # GETリクエストの場合はカテゴリページにリダイレクト
+        return redirect(url_for('categories'))
+    
+    # POSTリクエストの処理
     try:
         name = request.form.get('name')
         color = request.form.get('color', '#007bff')
@@ -721,6 +726,42 @@ def export_stats():
     }
     
     return jsonify(stats_data)
+
+@app.route('/delete_category/<int:category_id>', methods=['POST'])
+@login_required
+def delete_category(category_id):
+    """カテゴリを削除"""
+    try:
+        if 'guest_mode' in session:
+            # ゲストモード：セッションから削除
+            guest_categories = session.get('guest_categories', [])
+            session['guest_categories'] = [cat for cat in guest_categories if cat['id'] != category_id]
+            session.modified = True
+            flash('カテゴリを削除しました。（ゲストモード）', 'success')
+        else:
+            # ログインユーザー：データベースから削除
+            conn = get_db_connection()
+            user_id = session.get('user_id')
+            
+            # ユーザー自身が作成したカテゴリのみ削除可能
+            result = conn.execute(
+                'DELETE FROM categories WHERE id = ? AND user_id = ?',
+                (category_id, user_id)
+            )
+            
+            if result.rowcount > 0:
+                conn.commit()
+                flash('カテゴリを削除しました。', 'success')
+            else:
+                flash('削除できませんでした。デフォルトカテゴリまたは他のユーザーのカテゴリは削除できません。', 'error')
+            
+            conn.close()
+    
+    except Exception as e:
+        print(f"Delete category error: {e}")
+        flash(f'カテゴリの削除に失敗しました: {str(e)}', 'error')
+    
+    return redirect(url_for('categories'))
 
 # gunicorn用のアプリケーションオブジェクト
 application = app
