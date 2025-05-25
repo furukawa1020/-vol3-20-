@@ -571,95 +571,270 @@ def analytics():
             
             total_tasks = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ?', (user_id,)).fetchone()[0]
             completed_tasks = conn.execute('SELECT COUNT(*) FROM tasks WHERE user_id = ? AND completed = 1', (user_id,)).fetchone()[0]
-            pending_tasks = total_tasks - completed_tasks
+            incomplete_tasks = total_tasks - completed_tasks
             
-            category_stats = conn.execute('SELECT c.name, c.color, COUNT(t.id) as count FROM categories c LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ? WHERE c.user_id IS NULL OR c.user_id = ? GROUP BY c.id, c.name, c.color HAVING COUNT(t.id) > 0 ORDER BY COUNT(t.id) DESC', (user_id, user_id)).fetchall()
+            # カテゴリ別統計（詳細）
+            category_data = conn.execute('''
+                SELECT c.name, c.color,
+                       COUNT(t.id) as total,
+                       SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed
+                FROM categories c
+                LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
+                WHERE c.user_id IS NULL OR c.user_id = ?
+                GROUP BY c.id, c.name, c.color
+                HAVING COUNT(t.id) > 0
+                ORDER BY COUNT(t.id) DESC
+            ''', (user_id, user_id)).fetchall()
             
-            priority_stats = conn.execute('SELECT priority, COUNT(*) as count FROM tasks WHERE user_id = ? GROUP BY priority', (user_id,)).fetchall()
+            category_stats = {}
+            for cat in category_data:
+                category_stats[cat['name']] = {
+                    'total': cat['total'],
+                    'completed': cat['completed'],
+                    'color': cat['color']
+                }
+            
+            # 優先度別統計
+            priority_data = conn.execute('''
+                SELECT priority,
+                       COUNT(*) as total,
+                       SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed
+                FROM tasks 
+                WHERE user_id = ?
+                GROUP BY priority
+            ''', (user_id,)).fetchall()
+            
+            priority_stats = {}
+            for pri in priority_data:
+                priority_stats[pri['priority']] = {
+                    'total': pri['total'],
+                    'completed': pri['completed']
+                }
             
             conn.close()
         else:
+            # ゲストモード
             guest_tasks = session.get('guest_tasks', [])
             total_tasks = len(guest_tasks)
             completed_tasks = sum(1 for task in guest_tasks if task.get('completed'))
-            pending_tasks = total_tasks - completed_tasks
+            incomplete_tasks = total_tasks - completed_tasks
             
+            # カテゴリ別統計
             category_counts = {}
+            category_completed = {}
             for task in guest_tasks:
                 category = task.get('category', 'Uncategorized')
                 category_counts[category] = category_counts.get(category, 0) + 1
+                if task.get('completed'):
+                    category_completed[category] = category_completed.get(category, 0) + 1
             
-            conn = get_db_connection()
-            db_categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL').fetchall()
-            conn.close()
+            category_stats = {}
+            for category, total in category_counts.items():
+                category_stats[category] = {
+                    'total': total,
+                    'completed': category_completed.get(category, 0),
+                    'color': '#6c757d'  # デフォルト色
+                }
             
-            all_categories = {cat['name']: cat['color'] for cat in db_categories}
-            for cat in session.get('guest_categories', []):
-                all_categories[cat['name']] = cat['color']
-            
-            category_stats = []
-            for name, count in category_counts.items():
-                category_stats.append({'name': name, 'color': all_categories.get(name, '#6c757d'), 'count': count})
-            
+            # 優先度別統計
             priority_counts = {}
+            priority_completed = {}
             for task in guest_tasks:
                 priority = task.get('priority', 'medium')
                 priority_counts[priority] = priority_counts.get(priority, 0) + 1
+                if task.get('completed'):
+                    priority_completed[priority] = priority_completed.get(priority, 0) + 1
             
-            priority_stats = [{'priority': k, 'count': v} for k, v in priority_counts.items()]
+            priority_stats = {}
+            for priority, total in priority_counts.items():
+                priority_stats[priority] = {
+                    'total': total,
+                    'completed': priority_completed.get(priority, 0)
+                }
         
-        chart_url = None
-        if category_stats:
-            chart_url = generate_category_chart([dict(stat) for stat in category_stats])
-        
-        return render_template('analytics.html', total_tasks=total_tasks, completed_tasks=completed_tasks, pending_tasks=pending_tasks, category_stats=category_stats, priority_stats=priority_stats, chart_url=chart_url, is_guest='guest_mode' in session)
+        return render_template('analytics.html',
+                             total_tasks=total_tasks,
+                             completed_tasks=completed_tasks,
+                             incomplete_tasks=incomplete_tasks,
+                             category_stats=category_stats,
+                             priority_stats=priority_stats,
+                             is_guest='guest_mode' in session)
     
     except Exception as e:
         print(f"Analytics error: {e}")
         flash(f'Failed to get analytics data: {str(e)}', 'error')
-        return render_template('analytics.html', total_tasks=0, completed_tasks=0, pending_tasks=0, category_stats=[], priority_stats=[], chart_url=None, is_guest='guest_mode' in session)
+        return render_template('analytics.html',
+                             total_tasks=0,
+                             completed_tasks=0,
+                             incomplete_tasks=0,
+                             category_stats={},
+                             priority_stats={},
+                             is_guest='guest_mode' in session)
 
-def generate_category_chart(category_stats):
+# チャート生成エンドポイントを追加
+@app.route('/chart/<chart_type>')
+@login_required
+def generate_chart(chart_type):
+    user_id = get_current_user_id()
+    
     try:
-        if not category_stats:
+        if chart_type == 'category_pie':
+            # カテゴリ別円グラフ
+            if user_id:
+                conn = get_db_connection()
+                data = conn.execute('''
+                    SELECT c.name, c.color, COUNT(t.id) as count
+                    FROM categories c
+                    LEFT JOIN tasks t ON c.id = t.category_id AND t.user_id = ?
+                    WHERE c.user_id IS NULL OR c.user_id = ?
+                    GROUP BY c.id, c.name, c.color
+                    HAVING COUNT(t.id) > 0
+                    ORDER BY COUNT(t.id) DESC
+                ''', (user_id, user_id)).fetchall()
+                conn.close()
+            else:
+                guest_tasks = session.get('guest_tasks', [])
+                category_counts = {}
+                for task in guest_tasks:
+                    category = task.get('category', 'Uncategorized')
+                    category_counts[category] = category_counts.get(category, 0) + 1
+                
+                data = [{'name': name, 'count': count, 'color': '#6c757d'} for name, count in category_counts.items()]
+            
+            chart_url = create_pie_chart(data, 'Category Distribution')
+            return f"data:image/png;base64,{chart_url}"
+            
+        elif chart_type == 'priority_bar':
+            # 優先度別棒グラフ
+            if user_id:
+                conn = get_db_connection()
+                data = conn.execute('SELECT priority, COUNT(*) as count FROM tasks WHERE user_id = ? GROUP BY priority', (user_id,)).fetchall()
+                conn.close()
+            else:
+                guest_tasks = session.get('guest_tasks', [])
+                priority_counts = {}
+                for task in guest_tasks:
+                    priority = task.get('priority', 'medium')
+                    priority_counts[priority] = priority_counts.get(priority, 0) + 1
+                data = [{'priority': k, 'count': v} for k, v in priority_counts.items()]
+            
+            chart_url = create_bar_chart(data, 'Priority Distribution')
+            return f"data:image/png;base64,{chart_url}"
+            
+        else:
+            return "data:image/png;base64,", 400
+            
+    except Exception as e:
+        print(f"Chart generation error: {e}")
+        return "data:image/png;base64,", 500
+
+def create_pie_chart(data, title):
+    try:
+        if not data:
             return None
         
-        labels = [stat['name'] for stat in category_stats]
-        sizes = [stat['count'] for stat in category_stats]
-        colors = [stat['color'] for stat in category_stats]
+        labels = [item['name'] for item in data]
+        sizes = [item['count'] for item in data]
+        colors = [item.get('color', '#6c757d') for item in data]
         
-        fig, ax = plt.subplots(figsize=(8, 8))
+        fig, ax = plt.subplots(figsize=(10, 8))
         wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
         
         for text in texts:
-            text.set_fontsize(10)
+            text.set_fontsize(12)
         for autotext in autotexts:
             autotext.set_color('white')
             autotext.set_fontweight('bold')
+            autotext.set_fontsize(10)
         
-        ax.set_title('Category Task Distribution', fontsize=14, fontweight='bold')
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
         
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white')
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=150)
         img.seek(0)
         chart_url = base64.b64encode(img.getvalue()).decode()
         plt.close()
         
         return chart_url
     except Exception as e:
-        print(f"Chart generation error: {e}")
+        print(f"Pie chart generation error: {e}")
         return None
 
-@app.route('/health')
-def health():
+def create_bar_chart(data, title):
     try:
-        conn = get_db_connection()
-        conn.execute('SELECT 1')
-        conn.close()
-        return {"status": "healthy", "timestamp": datetime.now().isoformat()}, 200
+        if not data:
+            return None
+        
+        labels = [item['priority'] for item in data]
+        values = [item['count'] for item in data]
+        
+        colors = []
+        for label in labels:
+            if label == 'high':
+                colors.append('#dc3545')
+            elif label == 'medium':
+                colors.append('#ffc107')
+            else:
+                colors.append('#17a2b8')
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(labels, values, color=colors)
+        
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        ax.set_xlabel('Priority', fontsize=12)
+        ax.set_ylabel('Number of Tasks', fontsize=12)
+        
+        # 値をバーの上に表示
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                   f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+        
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', facecolor='white', dpi=150)
+        img.seek(0)
+        chart_url = base64.b64encode(img.getvalue()).decode()
+        plt.close()
+        
+        return chart_url
     except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}, 500
+        print(f"Bar chart generation error: {e}")
+        return None
 
+# エクスポート機能を追加
+@app.route('/export_stats')
+@login_required
+def export_stats():
+    user_id = get_current_user_id()
+    
+    try:
+        if user_id:
+            conn = get_db_connection()
+            tasks = conn.execute('SELECT * FROM tasks WHERE user_id = ?', (user_id,)).fetchall()
+            categories = conn.execute('SELECT * FROM categories WHERE user_id IS NULL OR user_id = ?', (user_id,)).fetchall()
+            conn.close()
+            
+            export_data = {
+                'tasks': [dict(task) for task in tasks],
+                'categories': [dict(cat) for cat in categories],
+                'exported_at': datetime.now().isoformat()
+            }
+        else:
+            export_data = {
+                'tasks': session.get('guest_tasks', []),
+                'categories': session.get('guest_categories', []),
+                'exported_at': datetime.now().isoformat(),
+                'note': 'Guest mode data'
+            }
+        
+        response = jsonify(export_data)
+        response.headers['Content-Disposition'] = 'attachment; filename=task_stats.json'
+        response.headers['Content-Type'] = 'application/json'
+        return response
+        
+    except Exception as e:
+        print(f"Export error: {e}")
+        return jsonify({'error': 'Export failed'}), 500
 @app.errorhandler(500)
 def internal_error(error):
     return "Internal Server Error", 500

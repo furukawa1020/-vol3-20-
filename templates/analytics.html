@@ -182,25 +182,29 @@
                         <h5><i class="bi bi-folder"></i> カテゴリ別統計</h5>
                     </div>
                     <div class="card-body">
-                        {% for category, stats in category_stats.items() %}
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h6 class="mb-0">{{ category }}</h6>
-                                <small class="text-muted">
-                                    完了: {{ stats.completed }} / 総数: {{ stats.total }}
-                                </small>
+                        {% if category_stats %}
+                            {% for category, stats in category_stats.items() %}
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <h6 class="mb-0">{{ category }}</h6>
+                                    <small class="text-muted">
+                                        完了: {{ stats.completed }} / 総数: {{ stats.total }}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-primary">
+                                        {% if stats.total > 0 %}
+                                            {{ "%.0f"|format((stats.completed / stats.total * 100)) }}%
+                                        {% else %}
+                                            0%
+                                        {% endif %}
+                                    </span>
+                                </div>
                             </div>
-                            <div class="text-end">
-                                <span class="badge bg-primary">
-                                    {% if stats.total > 0 %}
-                                        {{ "%.0f"|format((stats.completed / stats.total * 100)) }}%
-                                    {% else %}
-                                        0%
-                                    {% endif %}
-                                </span>
-                            </div>
-                        </div>
-                        {% endfor %}
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted">データがありません</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -211,33 +215,37 @@
                         <h5><i class="bi bi-exclamation-triangle"></i> 優先度別統計</h5>
                     </div>
                     <div class="card-body">
-                        {% for priority, stats in priority_stats.items() %}
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h6 class="mb-0">
-                                    {% if priority == 'high' %}
-                                        <span class="text-danger">高</span>
-                                    {% elif priority == 'medium' %}
-                                        <span class="text-warning">中</span>
-                                    {% else %}
-                                        <span class="text-info">低</span>
-                                    {% endif %}
-                                </h6>
-                                <small class="text-muted">
-                                    完了: {{ stats.completed }} / 総数: {{ stats.total }}
-                                </small>
+                        {% if priority_stats %}
+                            {% for priority, stats in priority_stats.items() %}
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <h6 class="mb-0">
+                                        {% if priority == 'high' %}
+                                            <span class="text-danger">高</span>
+                                        {% elif priority == 'medium' %}
+                                            <span class="text-warning">中</span>
+                                        {% else %}
+                                            <span class="text-info">低</span>
+                                        {% endif %}
+                                    </h6>
+                                    <small class="text-muted">
+                                        完了: {{ stats.completed }} / 総数: {{ stats.total }}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge {% if priority == 'high' %}bg-danger{% elif priority == 'medium' %}bg-warning{% else %}bg-info{% endif %}">
+                                        {% if stats.total > 0 %}
+                                            {{ "%.0f"|format((stats.completed / stats.total * 100)) }}%
+                                        {% else %}
+                                            0%
+                                        {% endif %}
+                                    </span>
+                                </div>
                             </div>
-                            <div class="text-end">
-                                <span class="badge {% if priority == 'high' %}bg-danger{% elif priority == 'medium' %}bg-warning{% else %}bg-info{% endif %}">
-                                    {% if stats.total > 0 %}
-                                        {{ "%.0f"|format((stats.completed / stats.total * 100)) }}%
-                                    {% else %}
-                                        0%
-                                    {% endif %}
-                                </span>
-                            </div>
-                        </div>
-                        {% endfor %}
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted">データがありません</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -280,16 +288,25 @@
             
             // グラフを読み込み
             fetch(`/chart/${chartType}`)
-                .then(response => response.text())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
                 .then(imageData => {
-                    chartDisplay.innerHTML = `<img src="${imageData}" class="img-fluid" alt="Chart">`;
+                    if (imageData && imageData.startsWith('data:image')) {
+                        chartDisplay.innerHTML = `<img src="${imageData}" class="img-fluid" alt="Chart" style="max-width: 100%; height: auto;">`;
+                    } else {
+                        throw new Error('Invalid image data');
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     chartDisplay.innerHTML = `
                         <div class="alert alert-danger">
                             <i class="bi bi-exclamation-triangle"></i>
-                            グラフの読み込みに失敗しました。
+                            グラフの読み込みに失敗しました。データが不足している可能性があります。
                         </div>
                     `;
                 });
@@ -297,7 +314,15 @@
         
         // ボタンのアクティブ状態管理
         document.querySelectorAll('.chart-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
+
+
+
+
+
+
+
+
+</html></body>    </script>        });            });                this.classList.add('active');                document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));            btn.addEventListener('click', function() {            btn.addEventListener('click', function() {
                 document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
             });
